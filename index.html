@@ -5,34 +5,34 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap');
 :root{--bg:#FAFAFA;--fg:#1A1A1A;--red:#C62828;--grn:#2E7D32;--muted:#999;--card:#FFF;--bdr:#E0E0E0;--th:#1A1A1A;--thf:#FAFAFA}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Space Grotesk',-apple-system,sans-serif;background:var(--bg);color:var(--fg);padding:24px;max-width:1200px;margin:0 auto;-webkit-font-smoothing:antialiased}
+body{font-family:'Space Grotesk',-apple-system,sans-serif;background:var(--bg);color:var(--fg);padding:16px 20px;margin:0;-webkit-font-smoothing:antialiased}
 .hd{display:flex;align-items:baseline;gap:16px;border-bottom:3px solid var(--fg);padding-bottom:12px;margin-bottom:24px}
-.hd h1{font-family:'Space Mono',monospace;font-size:16px;font-weight:700;letter-spacing:2px;text-transform:uppercase}
-.hd .dt{font-family:'Space Mono',monospace;font-size:34px;font-weight:700;letter-spacing:-1px}
-.hd .tg{font-family:'Space Mono',monospace;font-size:12px;background:var(--fg);color:var(--thf);padding:3px 8px;letter-spacing:1px}
+.hd h1{font-family:'Space Mono',monospace;font-size:20px;font-weight:700;letter-spacing:2px;text-transform:uppercase}
+.hd .dt{font-family:'Space Mono',monospace;font-size:42px;font-weight:700;letter-spacing:-1px}
+.hd .tg{font-family:'Space Mono',monospace;font-size:13px;background:var(--fg);color:var(--thf);padding:3px 8px;letter-spacing:1px}
 .card{background:var(--card);border:1px solid var(--bdr);margin-bottom:20px}
-.ch{font-family:'Space Mono',monospace;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;background:var(--th);color:var(--thf);padding:10px 16px;border-bottom:2px solid var(--red)}
+.ch{font-family:'Space Mono',monospace;font-size:15px;font-weight:700;letter-spacing:2px;text-transform:uppercase;background:var(--th);color:var(--thf);padding:10px 16px;border-bottom:2px solid var(--red)}
 .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table{border-collapse:collapse;width:100%;font-size:14px;white-space:nowrap}
-th{background:var(--th);color:var(--thf);padding:9px 12px;text-align:left;font-family:'Space Mono',monospace;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;top:0;z-index:2;min-width:60px}
-td{padding:8px 12px;border-bottom:1px solid var(--bdr);font-variant-numeric:tabular-nums;text-align:left;min-width:60px}
-td.sym{font-weight:700;font-size:15px;letter-spacing:.5px}
+table{border-collapse:collapse;width:100%;font-size:16px;white-space:nowrap}
+th{background:var(--th);color:var(--thf);padding:9px 12px;text-align:left;font-family:'Space Mono',monospace;font-size:13px;font-weight:700;letter-spacing:1px;position:sticky;top:0;z-index:2;min-width:60px}
+td{padding:10px 14px;border-bottom:1px solid var(--bdr);font-variant-numeric:tabular-nums;text-align:left;min-width:60px}
+td.sym{font-weight:700;font-size:17px;letter-spacing:.5px}
 td.num,td.pct{font-family:'Space Mono',monospace;text-align:right;min-width:80px}
 .st{font-weight:700;font-size:12px;letter-spacing:.5px}
-.ar{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--bdr);font-size:14px;flex-wrap:wrap}
+.ar{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--bdr);font-size:16px;flex-wrap:wrap}
 .ar:last-child{border-bottom:none}
 .ar.ok{color:var(--grn);font-weight:700;font-family:'Space Mono',monospace;letter-spacing:1px}
-.as{font-weight:700;font-size:15px;border-left:3px solid;padding-left:8px;min-width:60px}
+.as{font-weight:700;font-size:17px;border-left:3px solid;padding-left:8px;min-width:60px}
 .at{flex:1;min-width:200px}
-.ap{font-family:'Space Mono',monospace;font-size:12px;color:var(--muted)}
+.ap{font-family:'Space Mono',monospace;font-size:14px;color:var(--muted)}
 .am{padding:12px 16px}
-.amh{font-weight:700;font-size:13px;margin:8px 0 4px;border-bottom:1px solid var(--bdr);padding-bottom:4px}
-.ami{font-size:14px;line-height:1.6;color:#555;margin:2px 0}
-.nt{font-size:11px;color:var(--muted);padding:12px 16px;border-top:1px solid var(--bdr);letter-spacing:.5px}
+.amh{font-weight:700;font-size:15px;margin:8px 0 4px;border-bottom:1px solid var(--bdr);padding-bottom:4px}
+.ami{font-size:16px;line-height:1.6;color:#555;margin:2px 0}
+.nt{font-size:13px;color:var(--muted);padding:12px 16px;border-top:1px solid var(--bdr);letter-spacing:.5px}
 .ok{color:var(--grn);font-weight:700}
 .wrn{color:var(--red);font-weight:700}
 @media print{body{background:#fff;padding:10px}.card{border:1px solid #ccc;page-break-inside:avoid}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-@media(max-width:640px){body{padding:12px}.hd{flex-direction:column;gap:8px}.hd .dt{font-size:22px}.ar{flex-direction:column;align-items:flex-start;gap:4px}}
+@media(max-width:640px){body{padding:8px 12px}.hd{flex-direction:column;gap:8px}.hd .dt{font-size:28px}.ar{flex-direction:column;align-items:flex-start;gap:4px}}
 </style></head><body>
 <div class="hd"><h1>TRADING</h1><span class="dt">2026-08-20</span><span class="tg">LIVE</span></div>
 <div class="card"><div class="ch">TOP 10</div><div class="tw"><table><thead><tr><th>CODE</th><th>PRICE</th><th>SCORE</th><th>TGT</th><th>STOP</th></tr></thead><tbody><tr><td class="sym">SOXL</td><td class="num">120.68</td><td class="num">+13.8</td><td class="num">181</td><td class="num">103</td></tr><tr><td class="sym">CBRS</td><td class="num">204.99</td><td class="num">+9.6</td><td class="num">307</td><td class="num">174</td></tr><tr><td class="sym">CRCL</td><td class="num">84.03</td><td class="num">+7.1</td><td class="num">120</td><td class="num">76</td></tr><tr><td class="sym">FN</td><td class="num">439.89</td><td class="num">+6.3</td><td class="num">595</td><td class="num">377</td></tr><tr><td class="sym">RMBS</td><td class="num">91.98</td><td class="num">+5.8</td><td class="num">132</td><td class="num">82</td></tr><tr><td class="sym">FIG</td><td class="num">27.39</td><td class="num">+5.7</td><td class="num">39</td><td class="num">25</td></tr><tr><td class="sym">EAT</td><td class="num">230.40</td><td class="num">+4.8</td><td class="num">342</td><td class="num">216</td></tr><tr><td class="sym">COHR</td><td class="num">286.52</td><td class="num">+4.5</td><td class="num">365</td><td class="num">244</td></tr><tr><td class="sym">HBM</td><td class="num">28.05</td><td class="num">+4.4</td><td class="num">36</td><td class="num">26</td></tr><tr><td class="sym">EGO</td><td class="num">42.48</td><td class="num">+4.1</td><td class="num">62</td><td class="num">40</td></tr></tbody></table></div></div>
