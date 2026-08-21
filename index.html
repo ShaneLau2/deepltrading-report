@@ -3,44 +3,50 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>2026-08-20</title><style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap');
-:root{--bg:#FAFAFA;--fg:#1A1A1A;--red:#C62828;--grn:#2E7D32;--muted:#999;--card:#FFF;--bdr:#E0E0E0;--th:#1A1A1A;--thf:#FAFAFA}
+:root{--bg:#F1F2F4;--paper:#FFFFFF;--ink:#15171A;--muted:#6B7078;--line:#D9DDE3;--soft:#EEF0F3;--black:#15171A;--white:#FFFFFF;--red:#E33D3D;--red-dark:#B52B32;--green:#197A55;--amber:#B56A13;--purple:#6955B8;--blue:#1769AA}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Space Grotesk',-apple-system,sans-serif;background:var(--bg);color:var(--fg);padding:16px 20px;margin:0;-webkit-font-smoothing:antialiased}
-.hd{display:flex;align-items:baseline;gap:16px;border-bottom:3px solid var(--fg);padding-bottom:12px;margin-bottom:24px}
-.hd h1{font-family:'Space Mono',monospace;font-size:20px;font-weight:700;letter-spacing:2px;text-transform:uppercase}
-.hd .dt{font-family:'Space Mono',monospace;font-size:42px;font-weight:700;letter-spacing:-1px}
-.hd .tg{font-family:'Space Mono',monospace;font-size:13px;background:var(--fg);color:var(--thf);padding:3px 8px;letter-spacing:1px}
-.card{background:var(--card);border:1px solid var(--bdr);margin-bottom:20px}
-.ch{font-family:'Space Mono',monospace;font-size:15px;font-weight:700;letter-spacing:2px;text-transform:uppercase;background:var(--th);color:var(--thf);padding:10px 16px;border-bottom:2px solid var(--red)}
-.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table{border-collapse:collapse;width:100%;font-size:16px;white-space:nowrap}
-th{background:var(--th);color:var(--thf);padding:9px 12px;text-align:center;font-family:'Space Mono',monospace;font-size:13px;font-weight:700;letter-spacing:1px;position:sticky;top:0;z-index:2;min-width:60px}
-td{padding:10px 14px;border-bottom:1px solid var(--bdr);font-variant-numeric:tabular-nums;text-align:center;min-width:60px}
-td.sym{font-weight:700;font-size:17px;letter-spacing:.5px;text-align:center}
-td.sym .ticker{display:inline-block;font-family:'Space Mono',monospace;vertical-align:middle}
-td.sym .industry{display:inline-block;margin-left:8px;color:var(--muted);font-family:'Space Grotesk',sans-serif;font-size:11px;font-weight:400;letter-spacing:0;line-height:1.15;vertical-align:middle;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+html{background:var(--bg)}
+body{font-family:'Space Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);padding:28px 32px 44px;margin:0;-webkit-font-smoothing:antialiased}
+.hd{position:relative;display:flex;align-items:flex-end;gap:18px;max-width:1680px;margin:0 auto 28px;padding:0 0 18px;border-bottom:1px solid var(--ink)}
+.hd:before{content:'';width:12px;height:12px;background:var(--red);display:block;position:absolute;right:0;bottom:-6px}
+.hd h1{font-family:'Space Mono',monospace;font-size:19px;font-weight:700;letter-spacing:3px;text-transform:uppercase;line-height:1}
+.hd .dt{font-family:'Space Mono',monospace;font-size:46px;font-weight:700;letter-spacing:-2px;line-height:.85}
+.hd .tg{margin-left:auto;font-family:'Space Mono',monospace;font-size:11px;font-weight:700;background:var(--ink);color:var(--white);padding:7px 10px;letter-spacing:2px}
+.card{max-width:1680px;margin:0 auto 18px;background:var(--paper);border:1px solid var(--line);box-shadow:0 2px 0 rgba(21,23,26,.04)}
+.ch{display:flex;align-items:center;min-height:46px;font-family:'Space Mono',monospace;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;background:var(--black);color:var(--white);padding:11px 16px;border-left:5px solid var(--red)}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-color:var(--muted) var(--soft);scrollbar-width:thin}
+table{border-collapse:collapse;width:100%;font-size:15px;white-space:nowrap}
+th{background:var(--black);color:var(--white);padding:11px 14px;text-align:center;font-family:'Space Mono',monospace;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;top:0;z-index:2;min-width:60px;border-right:1px solid rgba(255,255,255,.12)}
+th:last-child{border-right:0}
+td{padding:12px 14px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;text-align:center;min-width:60px;transition:background .15s ease}
+tbody tr:hover td{background:#F7F8FA}
+td.sym{font-weight:700;font-size:15px;letter-spacing:.3px;text-align:center;min-width:170px}
+td.sym .ticker{display:inline-block;font-family:'Space Mono',monospace;vertical-align:middle;color:var(--ink)}
+td.sym .industry{display:inline-block;margin-left:8px;color:var(--muted);font-family:'Space Grotesk',sans-serif;font-size:11px;font-weight:500;letter-spacing:0;line-height:1.15;vertical-align:middle;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 td.num,td.pct{font-family:'Space Mono',monospace;text-align:center;min-width:80px}
 td.trend{min-width:100px;width:100px;padding:6px 12px;text-align:center}
 td.trend svg{display:block;margin:0 auto}
 th.trend-head{min-width:100px;width:100px;text-align:center!important}
+.top-card{border-top:4px solid var(--red)}
+.top-card tbody tr:first-child td{background:#FFF7F5;font-weight:700}
 .top-card td.sym,.top-history td.sym{text-align:center}
-.st{font-weight:700;font-size:12px;letter-spacing:.5px}
-.ar{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--bdr);font-size:16px;flex-wrap:wrap}
+.st{font-weight:700;font-size:11px;letter-spacing:.3px}
+.ar{display:flex;align-items:center;gap:14px;padding:13px 16px;border-bottom:1px solid var(--line);font-size:15px;flex-wrap:wrap}
 .ar:last-child{border-bottom:none}
-.ar.ok{color:var(--grn);font-weight:700;font-family:'Space Mono',monospace;letter-spacing:1px}
-.as{font-weight:700;font-size:17px;border-left:3px solid;padding-left:8px;min-width:60px}
-.at{flex:1;min-width:200px}
-.ap{font-family:'Space Mono',monospace;font-size:14px;color:var(--muted)}
-.am{padding:12px 16px}
-.amh{font-weight:700;font-size:15px;margin:8px 0 4px;border-bottom:1px solid var(--bdr);padding-bottom:4px}
-.ami{font-size:16px;line-height:1.6;color:#555;margin:2px 0}
-.nt{font-size:13px;color:var(--muted);padding:12px 16px;border-top:1px solid var(--bdr);letter-spacing:.5px}
-.ok{color:var(--grn);font-weight:700}
+.ar.ok{color:var(--green);font-weight:700;font-family:'Space Mono',monospace;letter-spacing:1px;padding:18px 16px}
+.as{font-weight:700;font-family:'Space Mono',monospace;font-size:14px;border-left:4px solid;padding:4px 0 4px 10px;min-width:70px}
+.at{flex:1;min-width:220px;line-height:1.45}
+.ap{font-family:'Space Mono',monospace;font-size:12px;color:var(--muted)}
+.am{padding:14px 16px}
+.amh{font-weight:700;font-size:14px;margin:8px 0 5px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.ami{font-size:14px;line-height:1.6;color:var(--muted);margin:2px 0}
+.nt{max-width:1680px;margin:0 auto;font-size:11px;color:var(--muted);padding:14px 2px;border-top:1px solid var(--line);letter-spacing:1px}
+.ok{color:var(--green);font-weight:700}
 .wrn{color:var(--red);font-weight:700}
 .date-cell{text-align:left !important}
-.today td{background:#FFF8E1 !important;font-weight:700}
-@media print{body{background:#fff;padding:10px}.card{border:1px solid #ccc;page-break-inside:avoid}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-@media(max-width:640px){body{padding:8px 12px}.hd{flex-direction:column;gap:8px}.hd .dt{font-size:28px}.ar{flex-direction:column;align-items:flex-start;gap:4px}}
+.today td{background:#FFF4D6 !important;font-weight:700}
+@media print{body{background:#fff;padding:10px}.card{border:1px solid #ccc;page-break-inside:avoid;box-shadow:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+@media(max-width:640px){body{padding:16px 10px 28px}.hd{align-items:flex-end;gap:10px;margin-bottom:18px}.hd h1{font-size:14px;letter-spacing:2px}.hd .dt{font-size:31px;letter-spacing:-1px}.hd .tg{font-size:9px;padding:6px 7px}.card{margin-bottom:14px}.ch{min-height:42px;font-size:11px;padding:9px 12px}.tw{margin:0}table{font-size:14px}th{font-size:10px;padding:9px 10px}td{padding:10px 11px}td.sym{font-size:14px;min-width:165px}td.sym .industry{font-size:10px;max-width:125px}.ar{padding:11px 12px;gap:8px}.ap{font-size:11px}.ami{font-size:14px}}
 </style></head><body>
 <div class="hd"><h1>TRADING</h1><span class="dt">2026-08-20</span><span class="tg">LIVE</span></div>
 <div class="card top-card"><div class="ch">TOP 10</div><div class="tw"><table><thead><tr><th>CODE</th><th>PRICE</th><th>SCORE</th><th>TGT</th><th>STOP</th><th class="trend-head">TREND</th></tr></thead><tbody><tr><td class="sym"><span class="ticker">SOXL</span><span class="industry">ETF</span></td><td class="num">120.68</td><td class="num">+13.8</td><td class="num">181</td><td class="num">103</td><td class="trend"><svg width="80" height="24" viewBox="0 0 80 24" style="display:block"><polyline points="0.0,2.0 80.0,22.0" fill="none" stroke="#C62828" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="80.0" cy="22.0" r="2" fill="#C62828"/></svg></td></tr><tr><td class="sym"><span class="ticker">CBRS</span><span class="industry">Semiconductors</span></td><td class="num">204.99</td><td class="num">+9.6</td><td class="num">307</td><td class="num">174</td><td class="trend"><svg width="80" height="24" viewBox="0 0 80 24" style="display:block"><polyline points="0.0,2.0 40.0,16.4 80.0,22.0" fill="none" stroke="#C62828" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="80.0" cy="22.0" r="2" fill="#C62828"/></svg></td></tr><tr><td class="sym"><span class="ticker">CRCL</span><span class="industry">未分类</span></td><td class="num">84.03</td><td class="num">+7.1</td><td class="num">120</td><td class="num">76</td><td class="trend"><svg width="80" height="24" viewBox="0 0 80 24" style="display:block"><polyline points="0.0,17.2 26.7,22.0 53.3,9.2 80.0,2.0" fill="none" stroke="#2E7D32" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="80.0" cy="2.0" r="2" fill="#2E7D32"/></svg></td></tr><tr><td class="sym"><span class="ticker">FN</span><span class="industry">Electronic Components</span></td><td class="num">439.89</td><td class="num">+6.3</td><td class="num">595</td><td class="num">377</td><td class="trend"><svg width="80" height="24" viewBox="0 0 80 24" style="display:block"><polyline points="0.0,5.4 20.0,2.0 40.0,15.9 60.0,19.8 80.0,22.0" fill="none" stroke="#C62828" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="80.0" cy="22.0" r="2" fill="#C62828"/></svg></td></tr><tr><td class="sym"><span class="ticker">RMBS</span><span class="industry">Semiconductors</span></td><td class="num">91.98</td><td class="num">+5.8</td><td class="num">132</td><td class="num">82</td><td class="trend"><svg width="80" height="24" viewBox="0 0 80 24" style="display:block"><polyline points="0.0,5.8 20.0,2.0 40.0,16.5 60.0,20.5 80.0,22.0" fill="none" stroke="#C62828" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="80.0" cy="22.0" r="2" fill="#C62828"/></svg></td></tr><tr><td class="sym"><span class="ticker">FIG</span><span class="industry">未分类</span></td><td class="num">27.39</td><td class="num">+5.7</td><td class="num">39</td><td class="num">25</td><td class="trend"><svg width="80" height="24" viewBox="0 0 80 24" style="display:block"><polyline points="0.0,22.0 26.7,15.1 53.3,3.3 80.0,2.0" fill="none" stroke="#2E7D32" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="80.0" cy="2.0" r="2" fill="#2E7D32"/></svg></td></tr><tr><td class="sym"><span class="ticker">EAT</span><span class="industry">Restaurants</span></td><td class="num">230.40</td><td class="num">+4.8</td><td class="num">342</td><td class="num">216</td><td class="trend"><svg width="80" height="24" viewBox="0 0 80 24" style="display:block"><polyline points="0.0,11.5 20.0,2.0 40.0,3.6 60.0,12.0 80.0,22.0" fill="none" stroke="#C62828" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="80.0" cy="22.0" r="2" fill="#C62828"/></svg></td></tr><tr><td class="sym"><span class="ticker">COHR</span><span class="industry">Scientific &amp; Technical Instruments</span></td><td class="num">286.52</td><td class="num">+4.5</td><td class="num">365</td><td class="num">244</td><td class="trend"><svg width="80" height="24" viewBox="0 0 80 24" style="display:block"><polyline points="0.0,11.0 20.0,2.0 40.0,16.4 60.0,20.4 80.0,22.0" fill="none" stroke="#C62828" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="80.0" cy="22.0" r="2" fill="#C62828"/></svg></td></tr><tr><td class="sym"><span class="ticker">HBM</span><span class="industry">Copper</span></td><td class="num">28.05</td><td class="num">+4.4</td><td class="num">36</td><td class="num">26</td><td class="trend"><svg width="80" height="24" viewBox="0 0 80 24" style="display:block"><polyline points="0.0,17.4 20.0,9.6 40.0,22.0 60.0,2.8 80.0,2.0" fill="none" stroke="#2E7D32" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="80.0" cy="2.0" r="2" fill="#2E7D32"/></svg></td></tr><tr><td class="sym"><span class="ticker">EGO</span><span class="industry">Gold</span></td><td class="num">42.48</td><td class="num">+4.1</td><td class="num">62</td><td class="num">40</td><td class="trend"><svg width="80" height="24" viewBox="0 0 80 24" style="display:block"><polyline points="0.0,21.6 20.0,13.8 40.0,22.0 60.0,4.7 80.0,2.0" fill="none" stroke="#2E7D32" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="80.0" cy="2.0" r="2" fill="#2E7D32"/></svg></td></tr></tbody></table></div></div>
