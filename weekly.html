@@ -103,6 +103,23 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 <blockquote>读法(2026-08-26 引擎 look-ahead 修复后重算,上表为诚实口径):旧结论「ATR×1.5 双窗口稳健折中(全窗 3.55/PF1.78)」基于含未来价格灌水的引擎,已废弃。修复后 k=50 ATR×1.5 基线 Sharpe≈1.18/累计+224%;k=30 口径无止损基线(Sharpe 1.53)反而高于有止损(1.22)——个股止损整体拖累,与 Frozen V1(无退出)结论一致,生产是否保留需重新评估。真实体验看交易级(下表): 多数交易亏钱,靠少数大赢家覆盖。</blockquote>
 
+<h2>风控 V2 对照(DD 阶梯 × IC 健康层)</h2>
+
+<blockquote>口径: V2 基于<b>裸 k=30 收益</b>叠加暴露(DD 阶梯 × IC 层,乘法组合, 2021-08-02 → 2026-05-28);V1 生产 = Top30 + 60D + DD8 + VT18 完整策略(本报告主口径)。两者股票池/止损不同,数字不可直接对比优劣,仅供了解 V2 暴露层的量级与回撤控制。</blockquote>
+
+<table>
+<tr><td>口径</td><td>Sharpe</td><td>最大回撤</td><td>累计</td><td>平均暴露</td></tr>
+<tr><td>裸基线(无风控)</td><td>1.56</td><td>-51.2%</td><td>+1301%</td><td>100%</td></tr>
+<tr><td>纯 DD 阶梯</td><td>4.00</td><td>-9.3%</td><td>+3897%</td><td>52%</td></tr>
+<tr><td><b>V2 = DD×IC</b></td><td><b>3.91</b></td><td><b>-8.3%</b></td><td>+2928%</td><td>49%</td></tr>
+<tr><td>V1 生产(同窗口)</td><td>1.70</td><td>-27.4%</td><td>+444%</td><td>59%</td></tr>
+</table>
+
+<li><b>2022 深熊段</b>: 纯DD MDD -9.2% → V2 -6.5%(全窗口连续切片口径),IC 触发 31 天</li>
+<li><b>2024</b>: IC 触发 47 天 (牛市健康期零干扰,组合 ≈ 纯DD)</li>
+<li><b>IC 层状态</b>: 正常参与(DD×IC) | 平均暴露 49%</li>
+<li>定位: IC 层是<b>冗余保险</b>(2022 深熊段压 MDD,健康期零触发);<code>signal_archive</code> 断更时自动退化为纯 DD(<code>ic_fallback=True</code> 告警)。追求最高 Sharpe 可切纯 DD。详细审计见 output/risk_control_v2_report.md</li>
+
 <h2>模型有效性检验(全窗口 vs 折6)</h2>
 
 <table>
@@ -257,7 +274,7 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 </main>
 <footer style="max-width:1080px;margin:0 auto;padding:0 20px 60px;color:var(--muted);font-size:12px">
-  生成时间: 2026-08-27 02:55 | 部署: deploy_weekly.py
+  生成时间: 2026-08-27 06:22 | 部署: deploy_weekly.py
 </footer>
 </body>
 </html>
