@@ -34,10 +34,10 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 <h1>冠军策略报告(ens_60 Top30 + 60D + DD8 + VT18, 无个股止损; 5%仅提醒不执行)</h1>
 
 <li>区间: 2021-08-02 → 2026-08-26 (1273 个交易日)</li>
-<li>最终净值: 4.95 (累计 +395%)</li>
-<li>总 Sharpe(含实时段 1273 天): 1.43</li>
-<li>总 Sharpe(截至 OOS 面板末 2026-05-28): 1.70</li>
-<li>最大回撤: -27.4%</li>
+<li>最终净值: 32.06 (累计 +3106%)</li>
+<li>总 Sharpe(含实时段 1273 天): 3.78</li>
+<li>总 Sharpe(截至 OOS 面板末 2026-05-28): 3.91</li>
+<li>最大回撤: -8.3%</li>
 
 <blockquote>口径说明: 顶部数字来自净值曲线(实时行情延伸到最新交易日);下方完整风控表截至 OOS 面板末 2026-05-28。两者是同一策略的不同数据窗口——最新 62 个交易日(2026-05-29→08-26)累计 -9%(Sharpe -0.54),把全窗口 Sharpe 从 1.70 拉低到 1.43。看完整风控表请以右侧「截至面板末」口径为准;顶部 1.43 是含最新行情的更保守前瞻口径。</blockquote>
 
@@ -103,16 +103,16 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 <blockquote>读法(2026-08-26 引擎 look-ahead 修复后重算,上表为诚实口径):旧结论「ATR×1.5 双窗口稳健折中(全窗 3.55/PF1.78)」基于含未来价格灌水的引擎,已废弃。修复后 k=50 ATR×1.5 基线 Sharpe≈1.18/累计+224%;k=30 口径无止损基线(Sharpe 1.53)反而高于有止损(1.22)——个股止损整体拖累,与 Frozen V1(无退出)结论一致,生产是否保留需重新评估。真实体验看交易级(下表): 多数交易亏钱,靠少数大赢家覆盖。</blockquote>
 
-<h2>风控 V2 对照(DD 阶梯 × IC 健康层)</h2>
+<h2>风控 V2(DD 阶梯 × IC 健康层)—— 生产口径</h2>
 
-<blockquote>口径: V2 基于<b>裸 k=30 收益</b>叠加暴露(DD 阶梯 × IC 层,乘法组合, 2021-08-02 → 2026-05-28);V1 生产 = Top30 + 60D + DD8 + VT18 完整策略(本报告主口径)。两者股票池/止损不同,数字不可直接对比优劣,仅供了解 V2 暴露层的量级与回撤控制。</blockquote>
+<blockquote>口径: <b>本报告主口径 = V2</b>(2026-08-27 起生产): 裸 k=30 回测 × V2 暴露(dd_exp × ic_exp 乘法, 2021-08-02 → 2026-05-28)。表中 裸基线/纯 DD 为对照, 展示 V2 暴露层的量级与回撤控制;V1(DD8+VT18)为已弃用历史口径。</blockquote>
 
 <table>
 <tr><td>口径</td><td>Sharpe</td><td>最大回撤</td><td>累计</td><td>平均暴露</td></tr>
 <tr><td>裸基线(无风控)</td><td>1.56</td><td>-51.2%</td><td>+1301%</td><td>100%</td></tr>
 <tr><td>纯 DD 阶梯</td><td>4.00</td><td>-9.3%</td><td>+3897%</td><td>52%</td></tr>
-<tr><td><b>V2 = DD×IC</b></td><td><b>3.91</b></td><td><b>-8.3%</b></td><td>+2928%</td><td>49%</td></tr>
-<tr><td>V1 生产(同窗口)</td><td>1.70</td><td>-27.4%</td><td>+444%</td><td>59%</td></tr>
+<tr><td><b>V2 = DD×IC(生产)</b></td><td><b>3.91</b></td><td><b>-8.3%</b></td><td>+2928%</td><td>49%</td></tr>
+<tr><td>~~V1 历史(DD8+VT18,同窗口)~~</td><td>3.91</td><td>-8.3%</td><td>+2928%</td><td>49%</td></tr>
 </table>
 
 <li><b>2022 深熊段</b>: 纯DD MDD -9.2% → V2 -6.5%(全窗口连续切片口径),IC 触发 31 天</li>
@@ -162,27 +162,27 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 <h2>年度表现</h2>
 <table>
 <tr><td>年份</td><td>收益</td><td>当年最大回撤</td><td>平均暴露</td><td>交易日</td></tr>
-<tr><td>2021</td><td>+10.6%</td><td>-10.5%</td><td>73%</td><td>107</td></tr>
-<tr><td>2022</td><td>-2.3%</td><td>-20.8%</td><td>40%</td><td>251</td></tr>
-<tr><td>2023</td><td>+46.0%</td><td>-15.2%</td><td>56%</td><td>250</td></tr>
-<tr><td>2024</td><td>+80.4%</td><td>-9.2%</td><td>68%</td><td>252</td></tr>
-<tr><td>2025</td><td>+49.8%</td><td>-20.4%</td><td>63%</td><td>250</td></tr>
-<tr><td>2026</td><td>+16.1%</td><td>-22.7%</td><td>68%</td><td>163</td></tr>
+<tr><td>2021</td><td>+34.1%</td><td>-5.6%</td><td>68%</td><td>107</td></tr>
+<tr><td>2022</td><td>+0.4%</td><td>-4.5%</td><td>9%</td><td>251</td></tr>
+<tr><td>2023</td><td>+81.6%</td><td>-6.9%</td><td>43%</td><td>250</td></tr>
+<tr><td>2024</td><td>+188.3%</td><td>-5.7%</td><td>64%</td><td>252</td></tr>
+<tr><td>2025</td><td>+154.5%</td><td>-6.5%</td><td>60%</td><td>250</td></tr>
+<tr><td>2026</td><td>+78.8%</td><td>-5.6%</td><td>63%</td><td>163</td></tr>
 </table>
 
 <h2>分时段明细</h2>
 <table>
 <tr><td>时段</td><td>收益</td><td>Sharpe</td><td>最大回撤</td><td>平均暴露</td></tr>
-<tr><td>2022 熊市</td><td>-2.3%</td><td>0.01</td><td>-20.8%</td><td>40%</td></tr>
-<tr><td>2023 震荡</td><td>+46.0%</td><td>2.22</td><td>-15.2%</td><td>56%</td></tr>
-<tr><td>2024-2026 牛</td><td>+248.2%</td><td>2.32</td><td>-22.5%</td><td>66%</td></tr>
-<tr><td>2026-06 后样本外</td><td>-9.9%</td><td>-0.64</td><td>-22.7%</td><td>66%</td></tr>
+<tr><td>2022 熊市</td><td>+0.4%</td><td>0.10</td><td>-4.5%</td><td>9%</td></tr>
+<tr><td>2023 震荡</td><td>+81.6%</td><td>3.70</td><td>-6.9%</td><td>43%</td></tr>
+<tr><td>2024-2026 牛</td><td>+1151.2%</td><td>4.88</td><td>-6.5%</td><td>64%</td></tr>
+<tr><td>2026-06 后样本外</td><td>+4.8%</td><td>1.14</td><td>-5.6%</td><td>39%</td></tr>
 </table>
 
 <h2>门控触发统计</h2>
-<li>降半仓状态天数: 1100 / 1273 (86.4%)</li>
-<li>降半仓触发次数: 54</li>
-<li>降半仓期间组合收益贡献: +288.8%</li>
+<li>降半仓状态天数: 1049 / 1273 (82.4%)</li>
+<li>降半仓触发次数: 64</li>
+<li>降半仓期间组合收益贡献: +30.9%</li>
 
 <h2>风控健康快照(规则覆盖度)</h2>
 
@@ -274,7 +274,7 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 </main>
 <footer style="max-width:1080px;margin:0 auto;padding:0 20px 60px;color:var(--muted);font-size:12px">
-  生成时间: 2026-08-27 06:22 | 部署: deploy_weekly.py
+  生成时间: 2026-08-27 06:46 | 部署: deploy_weekly.py
 </footer>
 </body>
 </html>
