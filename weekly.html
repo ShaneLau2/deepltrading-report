@@ -43,20 +43,20 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 <h2>完整风控指标表(全窗口 vs 折6样本外)</h2>
 
-<li>全窗口: 2021-08 → 2026-05-28(面板末, 296 天最长水下期)</li>
+<li>全窗口: 2021-08 → 2026-05-28(面板末, 288 天最长水下期)</li>
 <li>折6样本外: 2025-11-28 后</li>
 
 <table>
 <tr><th>指标</th><th>全窗口</th><th>折6样本外</th><th>说明</th></tr>
-<tr><td>Sharpe</td><td>1.70</td><td>2.01</td><td>越高越好</td></tr>
-<tr><td>Sortino</td><td>2.62</td><td>2.98</td><td>越高越好(只罚下行波动)</td></tr>
-<tr><td>Calmar</td><td>1.54</td><td>6.76</td><td>年化收益 /</td><td>最大回撤</td><td></td></tr>
-<tr><td>Profit Factor</td><td>1.32</td><td>1.37</td><td>总盈利 / 总亏损(&gt;1 才盈利)</td></tr>
+<tr><td>Sharpe</td><td>3.91</td><td>5.24</td><td>越高越好</td></tr>
+<tr><td>Sortino</td><td>8.69</td><td>13.69</td><td>越高越好(只罚下行波动)</td></tr>
+<tr><td>Calmar</td><td>12.45</td><td>53.06</td><td>年化收益 /</td><td>最大回撤</td><td></td></tr>
+<tr><td>Profit Factor</td><td>2.08</td><td>2.35</td><td>总盈利 / 总亏损(&gt;1 才盈利)</td></tr>
 <tr><td>胜率</td><td>55.0%</td><td>58.9%</td><td>盈利交易日占比(按交易日)</td></tr>
-<tr><td>Recovery Factor</td><td>16.2</td><td>3.0</td><td>净收益 /</td><td>最大回撤</td><td></td></tr>
-<tr><td>最长回撤持续天数</td><td>296</td><td>30</td><td>水下(低于前高)最长交易日数</td></tr>
-<tr><td>累计收益</td><td>+444.1%</td><td>+24.1%</td><td>净值-1</td></tr>
-<tr><td>最大回撤</td><td>-27.4%</td><td>-8.1%</td><td>净值从峰值最大回落</td></tr>
+<tr><td>Recovery Factor</td><td>352.8</td><td>18.2</td><td>净收益 /</td><td>最大回撤</td><td></td></tr>
+<tr><td>最长回撤持续天数</td><td>288</td><td>23</td><td>水下(低于前高)最长交易日数</td></tr>
+<tr><td>累计收益</td><td>+2928.3%</td><td>+82.9%</td><td>净值-1</td></tr>
+<tr><td>最大回撤</td><td>-8.3%</td><td>-4.5%</td><td>净值从峰值最大回落</td></tr>
 </table>
 
 <blockquote>Recovery Factor 全窗口会被 5 年复利吹大(净收益累积很大、分母是单次回撤),</blockquote>
@@ -274,7 +274,7 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 </main>
 <footer style="max-width:1080px;margin:0 auto;padding:0 20px 60px;color:var(--muted);font-size:12px">
-  生成时间: 2026-08-27 06:46 | 部署: deploy_weekly.py
+  生成时间: 2026-08-27 06:59 | 部署: deploy_weekly.py
 </footer>
 </body>
 </html>
