@@ -31,7 +31,7 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 </head>
 <body>
 <main>
-<h1>冠军策略报告(ens_60 Top30 + 60D + DD8 + VT18, 无个股止损; 5%仅提醒不执行)</h1>
+<h1>冠军策略报告(ens_60 Top30 + 60D + V2 风控(DD阶梯×IC), 无个股止损)</h1>
 
 <li>区间: 2021-08-02 → 2026-08-26 (1273 个交易日)</li>
 <li>最终净值: 32.06 (累计 +3106%)</li>
@@ -157,7 +157,7 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 <li>当前风控加分模型: gru</li>
 <li>当前风控拖累模型: mlp_downside_vol_3m, mlp_high_low_range_20, mlp_knife, ens, mlp_burst, mlp_base, mlp_close_to_52w_high, mlp_vol_12m_div_log_mc, mlp_c52w, mlp_vol_binary, mlp_vol_ratio_5, mlp_swing, lgb, mlp_max_ret_1m, mlp_vol_12m, mlp_ar</li>
 
-<li>生产风控开关: <b>裸模型</b>(rc_approved 连续 0/3 周,竞技场自动维护)</li>
+<li>生产风控: <b>V2(DD阶梯×IC健康层)</b>, 2026-08-27 起(见 FROZEN_CHAMPION_V1);旧 ATR×1.5+DD8% 竞技场机制已弃用</li>
 
 <h2>年度表现</h2>
 <table>
@@ -274,7 +274,7 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 </main>
 <footer style="max-width:1080px;margin:0 auto;padding:0 20px 60px;color:var(--muted);font-size:12px">
-  生成时间: 2026-08-27 07:00 | 部署: deploy_weekly.py
+  生成时间: 2026-08-27 07:07 | 部署: deploy_weekly.py
 </footer>
 </body>
 </html>
