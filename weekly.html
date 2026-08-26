@@ -35,8 +35,11 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 <li>区间: 2021-08-02 → 2026-08-26 (1273 个交易日)</li>
 <li>最终净值: 4.95 (累计 +395%)</li>
-<li>总 Sharpe: 1.43</li>
+<li>总 Sharpe(含实时段 1273 天): 1.43</li>
+<li>总 Sharpe(截至 OOS 面板末 2026-05-28): 1.70</li>
 <li>最大回撤: -27.4%</li>
+
+<blockquote>口径说明: 顶部数字来自净值曲线(实时行情延伸到最新交易日);下方完整风控表截至 OOS 面板末 2026-05-28。两者是同一策略的不同数据窗口——最新 62 个交易日(2026-05-29→08-26)累计 -9%(Sharpe -0.54),把全窗口 Sharpe 从 1.70 拉低到 1.43。看完整风控表请以右侧「截至面板末」口径为准;顶部 1.43 是含最新行情的更保守前瞻口径。</blockquote>
 
 <h2>完整风控指标表(全窗口 vs 折6样本外)</h2>
 
@@ -254,7 +257,7 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 </main>
 <footer style="max-width:1080px;margin:0 auto;padding:0 20px 60px;color:var(--muted);font-size:12px">
-  生成时间: 2026-08-27 02:37 | 部署: deploy_weekly.py
+  生成时间: 2026-08-27 02:43 | 部署: deploy_weekly.py
 </footer>
 </body>
 </html>
