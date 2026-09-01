@@ -45,20 +45,20 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 <h2>完整风控指标表(全窗口 vs 折6样本外)</h2>
 
-<li>全窗口: 2021-08 → 2026-05-28(面板末, 288 天最长水下期)</li>
-<li>折6样本外: 2025-11-28 后</li>
+<li>全窗口: 2021-08 → 2026-08-28(面板末, 288 天最长水下期)</li>
+<li>折6样本外: 2026-02-28 后</li>
 
 <table>
 <tr><th>指标</th><th>全窗口</th><th>折6样本外</th><th>说明</th></tr>
-<tr><td>Sharpe</td><td>3.91</td><td>5.24</td><td>越高越好</td></tr>
-<tr><td>Sortino</td><td>8.69</td><td>13.69</td><td>越高越好(只罚下行波动)</td></tr>
-<tr><td>Calmar</td><td>12.45</td><td>53.06</td><td>年化收益 /</td><td>最大回撤</td><td></td></tr>
-<tr><td>Profit Factor</td><td>2.08</td><td>2.35</td><td>总盈利 / 总亏损(&gt;1 才盈利)</td></tr>
-<tr><td>胜率</td><td>55.0%</td><td>58.9%</td><td>盈利交易日占比(按交易日)</td></tr>
-<tr><td>Recovery Factor</td><td>352.8</td><td>18.2</td><td>净收益 /</td><td>最大回撤</td><td></td></tr>
-<tr><td>最长回撤持续天数</td><td>288</td><td>23</td><td>水下(低于前高)最长交易日数</td></tr>
-<tr><td>累计收益</td><td>+2928.3%</td><td>+82.9%</td><td>净值-1</td></tr>
-<tr><td>最大回撤</td><td>-8.3%</td><td>-4.5%</td><td>净值从峰值最大回落</td></tr>
+<tr><td>Sharpe</td><td>3.80</td><td>3.09</td><td>越高越好</td></tr>
+<tr><td>Sortino</td><td>8.43</td><td>5.84</td><td>越高越好(只罚下行波动)</td></tr>
+<tr><td>Calmar</td><td>12.30</td><td>20.09</td><td>年化收益 /</td><td>最大回撤</td><td></td></tr>
+<tr><td>Profit Factor</td><td>2.04</td><td>1.70</td><td>总盈利 / 总亏损(&gt;1 才盈利)</td></tr>
+<tr><td>胜率</td><td>54.8%</td><td>52.8%</td><td>盈利交易日占比(按交易日)</td></tr>
+<tr><td>Recovery Factor</td><td>410.0</td><td>8.1</td><td>净收益 /</td><td>最大回撤</td><td></td></tr>
+<tr><td>最长回撤持续天数</td><td>288</td><td>35</td><td>水下(低于前高)最长交易日数</td></tr>
+<tr><td>累计收益</td><td>+3402.9%</td><td>+45.2%</td><td>净值-1</td></tr>
+<tr><td>最大回撤</td><td>-8.3%</td><td>-5.6%</td><td>净值从峰值最大回落</td></tr>
 </table>
 
 <blockquote>Recovery Factor 全窗口会被 5 年复利吹大(净收益累积很大、分母是单次回撤),</blockquote>
@@ -69,52 +69,52 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 <table>
 <tr><td>指标</td><td>全窗口</td><td>折6样本外</td></tr>
-<tr><td>交易笔数</td><td>600</td><td>58</td></tr>
-<tr><td>未平仓(数据末端)</td><td>30</td><td>28</td></tr>
-<tr><td>胜率(按笔)</td><td>58.8%</td><td>67.2%</td></tr>
-<tr><td>盈亏比 PF(按笔)</td><td>2.92</td><td>5.70</td></tr>
-<tr><td>平均盈利</td><td>+41.9%</td><td>+48.5%</td></tr>
-<tr><td>平均亏损</td><td>-20.5%</td><td>-17.5%</td></tr>
-<tr><td>单笔期望</td><td>+16.2%</td><td>+26.9%</td></tr>
+<tr><td>交易笔数</td><td>630</td><td>58</td></tr>
+<tr><td>未平仓(数据末端)</td><td>30</td><td>30</td></tr>
+<tr><td>胜率(按笔)</td><td>58.9%</td><td>51.7%</td></tr>
+<tr><td>盈亏比 PF(按笔)</td><td>2.88</td><td>2.23</td></tr>
+<tr><td>平均盈利</td><td>+41.0%</td><td>+42.2%</td></tr>
+<tr><td>平均亏损</td><td>-20.4%</td><td>-20.2%</td></tr>
+<tr><td>单笔期望</td><td>+15.8%</td><td>+12.0%</td></tr>
 </table>
 
 <p><b>按平仓原因分解(全窗口)</b></p>
 
 <table>
 <tr><td>平仓原因</td><td>笔数</td><td>胜率</td><td>平均盈亏</td><td>解读</td></tr>
-<tr><td>持有至重平衡(60日自然退出)</td><td>600</td><td>58.8%</td><td>+16.2%</td><td>自然持有至重平衡,大赢家来源</td></tr>
+<tr><td>持有至重平衡(60日自然退出)</td><td>630</td><td>58.9%</td><td>+15.8%</td><td>自然持有至重平衡,大赢家来源</td></tr>
 </table>
 
-<blockquote>折6样本外窗口: 2025-11-28 后(数据驱动近6个月)。</blockquote>
+<blockquote>折6样本外窗口: 2026-02-28 后(数据驱动近6个月)。</blockquote>
 
 <p><b>PF/胜率提升空间(ATR 网格双窗口,勿单窗追最优)</b></p>
 
 <table>
 <tr><td>ATR</td><td>窗口</td><td>日Sharpe</td><td>日PF</td><td>日胜率</td><td>交易PF</td><td>交易胜率</td><td>止损数</td></tr>
-<tr><td>1.00</td><td>全窗口</td><td>1.08</td><td>1.20</td><td>53.3%</td><td>2.19</td><td>28.7%</td><td>734</td></tr>
-<tr><td>1.00</td><td>折6</td><td>1.38</td><td>1.25</td><td>58.1%</td><td>3.38</td><td>25.9%</td><td>92</td></tr>
-<tr><td>1.25</td><td>全窗口</td><td>0.80</td><td>1.15</td><td>54.7%</td><td>2.05</td><td>30.8%</td><td>692</td></tr>
-<tr><td>1.25</td><td>折6</td><td>1.17</td><td>1.21</td><td>58.1%</td><td>3.65</td><td>30.9%</td><td>77</td></tr>
-<tr><td>1.50</td><td>全窗口</td><td>1.09</td><td>1.20</td><td>54.9%</td><td>2.09</td><td>35.0%</td><td>640</td></tr>
-<tr><td>1.50</td><td>折6</td><td>1.58</td><td>1.29</td><td>58.1%</td><td>4.23</td><td>38.1%</td><td>63</td></tr>
-<tr><td>1.75</td><td>全窗口</td><td>1.20</td><td>1.22</td><td>55.1%</td><td>2.09</td><td>38.1%</td><td>589</td></tr>
-<tr><td>1.75</td><td>折6</td><td>2.11</td><td>1.40</td><td>59.7%</td><td>5.26</td><td>47.6%</td><td>50</td></tr>
-<tr><td>2.00</td><td>全窗口</td><td>1.32</td><td>1.24</td><td>54.5%</td><td>2.14</td><td>41.1%</td><td>540</td></tr>
-<tr><td>2.00</td><td>折6</td><td>2.27</td><td>1.43</td><td>62.9%</td><td>5.29</td><td>51.0%</td><td>46</td></tr>
+<tr><td>1.00</td><td>全窗口</td><td>1.05</td><td>1.20</td><td>53.0%</td><td>2.12</td><td>28.4%</td><td>775</td></tr>
+<tr><td>1.00</td><td>折6</td><td>-0.36</td><td>0.94</td><td>56.0%</td><td>0.45</td><td>11.0%</td><td>92</td></tr>
+<tr><td>1.25</td><td>全窗口</td><td>0.81</td><td>1.15</td><td>54.2%</td><td>2.01</td><td>30.6%</td><td>732</td></tr>
+<tr><td>1.25</td><td>折6</td><td>0.26</td><td>1.05</td><td>57.6%</td><td>0.96</td><td>16.2%</td><td>86</td></tr>
+<tr><td>1.50</td><td>全窗口</td><td>1.02</td><td>1.18</td><td>54.3%</td><td>2.04</td><td>34.7%</td><td>679</td></tr>
+<tr><td>1.50</td><td>折6</td><td>0.35</td><td>1.06</td><td>56.8%</td><td>1.13</td><td>20.2%</td><td>81</td></tr>
+<tr><td>1.75</td><td>全窗口</td><td>1.18</td><td>1.21</td><td>55.0%</td><td>2.06</td><td>38.2%</td><td>623</td></tr>
+<tr><td>1.75</td><td>折6</td><td>0.06</td><td>1.01</td><td>56.0%</td><td>1.01</td><td>19.2%</td><td>79</td></tr>
+<tr><td>2.00</td><td>全窗口</td><td>1.24</td><td>1.23</td><td>54.3%</td><td>2.11</td><td>41.3%</td><td>570</td></tr>
+<tr><td>2.00</td><td>折6</td><td>0.24</td><td>1.04</td><td>59.2%</td><td>1.31</td><td>24.2%</td><td>74</td></tr>
 </table>
 
 <blockquote>读法(2026-08-26 引擎 look-ahead 修复后重算,上表为诚实口径):旧结论「ATR×1.5 双窗口稳健折中(全窗 3.55/PF1.78)」基于含未来价格灌水的引擎,已废弃。修复后 k=50 ATR×1.5 基线 Sharpe≈1.18/累计+224%;k=30 口径无止损基线(Sharpe 1.53)反而高于有止损(1.22)——个股止损整体拖累,与 Frozen V1(无退出)结论一致,生产是否保留需重新评估。真实体验看交易级(下表): 多数交易亏钱,靠少数大赢家覆盖。</blockquote>
 
 <h2>风控 V2(DD 阶梯 × IC 健康层)—— 生产口径</h2>
 
-<blockquote>口径: <b>本报告主口径 = V2</b>(2026-08-27 起生产): 裸 k=30 回测 × V2 暴露(dd_exp × ic_exp 乘法, 2021-08-02 → 2026-05-28)。表中 裸基线/纯 DD 为对照, 展示 V2 暴露层的量级与回撤控制;V1(DD8+VT18)为已弃用历史口径。</blockquote>
+<blockquote>口径: <b>本报告主口径 = V2</b>(2026-08-27 起生产): 裸 k=30 回测 × V2 暴露(dd_exp × ic_exp 乘法, 2021-08-02 → 2026-08-28)。表中 裸基线/纯 DD 为对照, 展示 V2 暴露层的量级与回撤控制;V1(DD8+VT18)为已弃用历史口径。</blockquote>
 
 <table>
 <tr><td>口径</td><td>Sharpe</td><td>最大回撤</td><td>累计</td><td>平均暴露</td></tr>
-<tr><td>裸基线(无风控)</td><td>1.56</td><td>-51.2%</td><td>+1301%</td><td>100%</td></tr>
-<tr><td>纯 DD 阶梯</td><td>2.59</td><td>-11.2%</td><td>+491%</td><td>42%</td></tr>
-<tr><td><b>V2 = DD×IC(生产)</b></td><td><b>2.49</b></td><td><b>-10.2%</b></td><td>+405%</td><td>39%</td></tr>
-<tr><td>~~V1 历史(DD8+VT18,同窗口)~~</td><td>1.70</td><td>-27.4%</td><td>+444%</td><td>59%</td></tr>
+<tr><td>裸基线(无风控)</td><td>1.48</td><td>-51.2%</td><td>+1264%</td><td>100%</td></tr>
+<tr><td>纯 DD 阶梯</td><td>2.44</td><td>-11.2%</td><td>+489%</td><td>42%</td></tr>
+<tr><td><b>V2 = DD×IC(生产)</b></td><td><b>2.34</b></td><td><b>-10.2%</b></td><td>+402%</td><td>39%</td></tr>
+<tr><td>~~V1 历史(DD8+VT18,同窗口)~~</td><td>1.58</td><td>-27.4%</td><td>+422%</td><td>59%</td></tr>
 </table>
 
 <li><b>2022 深熊段</b>: 纯DD MDD -9.2% → V2 -6.5%(全窗口连续切片口径),IC 触发 31 天</li>
@@ -128,13 +128,13 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 <table>
 <tr><td>口径</td><td>数值</td><td>说明</td></tr>
-<tr><td>裸 dd(触发阶梯)</td><td>-9.52%</td><td>生产裸曲线(无前视延伸), DD 阶梯据此降仓</td></tr>
+<tr><td>裸 dd(触发阶梯)</td><td>-15.24%</td><td>生产裸曲线(无前视延伸), DD 阶梯据此降仓</td></tr>
 <tr><td>复合 dd(纸面净值)</td><td>-5.03%</td><td>champion_equity.dd 末日值(V2 暴露后曲线)</td></tr>
 <tr><td>实盘 dd(持仓)</td><td>-4.51%</td><td>holdings+panel 重建(贡献调整), 真实持仓口径</td></tr>
 </table>
 
-<li>快照一致性: <b>⚠ 合法偏离</b> 复合 dd -5.03% vs 裸 dd×今日暴露 -3.33% · 偏差 -1.70pp(容差 1.50pp) · 回撤窗口均暴露 53.1% 可解释(合法)</li>
-<li>暴露执行: 未按暴露降仓(满仓)(实盘隐含 100% vs 目标 35%) · 图与快照每日随 v2_prod 刷新, 详情见日报 V2 EXPOSURE 卡片</li>
+<li>快照一致性: <b>✅ 一致</b> 复合 dd -5.03% vs 裸 dd×今日暴露 -3.81% · 偏差 -1.22pp(容差 1.52pp)</li>
+<li>暴露执行: 未按暴露降仓(满仓)(实盘隐含 100% vs 目标 25%) · 图与快照每日随 v2_prod 刷新, 详情见日报 V2 EXPOSURE 卡片</li>
 
 <h2>全模型 OOS IC 全景</h2>
 
@@ -142,18 +142,18 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 <table>
 <tr><td>用途</td><td>信号</td><td>标签</td><td>IC</td><td>ICIR</td><td>t</td></tr>
-<tr><td>选股</td><td>mlp_20</td><td>fwd_ret_20</td><td>+0.0372</td><td>0.32</td><td>+11.0</td></tr>
-<tr><td>选股</td><td>lgb_20</td><td>fwd_ret_20</td><td>+0.0336</td><td>0.27</td><td>+9.3</td></tr>
-<tr><td>选股</td><td>ens_20</td><td>fwd_ret_20</td><td>+0.0415</td><td>0.33</td><td>+11.3</td></tr>
-<tr><td>选股</td><td>real_ens_20</td><td>fwd_ret_20</td><td>+0.0415</td><td>0.33</td><td>+11.3</td></tr>
-<tr><td>选股</td><td>mlp_40</td><td>fwd_ret_40</td><td>+0.0669</td><td>0.46</td><td>+15.8</td></tr>
-<tr><td>选股</td><td>lgb_40</td><td>fwd_ret_40</td><td>+0.0602</td><td>0.46</td><td>+16.1</td></tr>
-<tr><td>选股</td><td>ens_40</td><td>fwd_ret_40</td><td>+0.0727</td><td>0.50</td><td>+17.4</td></tr>
-<tr><td>选股</td><td>real_ens_40</td><td>fwd_ret_40</td><td>+0.0727</td><td>0.50</td><td>+17.4</td></tr>
-<tr><td>选股</td><td>mlp_60</td><td>fwd_ret_60</td><td>+0.0866</td><td>0.59</td><td>+20.4</td></tr>
-<tr><td>选股</td><td>lgb_60</td><td>fwd_ret_60</td><td>+0.0758</td><td>0.55</td><td>+19.0</td></tr>
-<tr><td>选股</td><td>ens_60</td><td>fwd_ret_60</td><td>+0.0924</td><td>0.61</td><td>+21.2</td></tr>
-<tr><td>选股</td><td>real_ens_60</td><td>fwd_ret_60</td><td>+0.0924</td><td>0.61</td><td>+21.2</td></tr>
+<tr><td>选股</td><td>mlp_20</td><td>fwd_ret_20</td><td>+0.0371</td><td>0.32</td><td>+11.1</td></tr>
+<tr><td>选股</td><td>lgb_20</td><td>fwd_ret_20</td><td>+0.0327</td><td>0.26</td><td>+9.1</td></tr>
+<tr><td>选股</td><td>ens_20</td><td>fwd_ret_20</td><td>+0.0409</td><td>0.32</td><td>+11.2</td></tr>
+<tr><td>选股</td><td>real_ens_20</td><td>fwd_ret_20</td><td>+0.0409</td><td>0.32</td><td>+11.2</td></tr>
+<tr><td>选股</td><td>mlp_40</td><td>fwd_ret_40</td><td>+0.0647</td><td>0.44</td><td>+15.5</td></tr>
+<tr><td>选股</td><td>lgb_40</td><td>fwd_ret_40</td><td>+0.0576</td><td>0.44</td><td>+15.4</td></tr>
+<tr><td>选股</td><td>ens_40</td><td>fwd_ret_40</td><td>+0.0700</td><td>0.48</td><td>+16.9</td></tr>
+<tr><td>选股</td><td>real_ens_40</td><td>fwd_ret_40</td><td>+0.0700</td><td>0.48</td><td>+16.9</td></tr>
+<tr><td>选股</td><td>mlp_60</td><td>fwd_ret_60</td><td>+0.0864</td><td>0.58</td><td>+20.4</td></tr>
+<tr><td>选股</td><td>lgb_60</td><td>fwd_ret_60</td><td>+0.0752</td><td>0.54</td><td>+18.8</td></tr>
+<tr><td>选股</td><td>ens_60</td><td>fwd_ret_60</td><td>+0.0919</td><td>0.60</td><td>+21.1</td></tr>
+<tr><td>选股</td><td>real_ens_60</td><td>fwd_ret_60</td><td>+0.0919</td><td>0.60</td><td>+21.1</td></tr>
 <tr><td>止盈</td><td>p_high_20</td><td>fwd_high_20</td><td>+0.4780</td><td>3.81</td><td>+132.5</td></tr>
 <tr><td>止盈</td><td>p_high_40</td><td>fwd_high_40</td><td>+0.4864</td><td>4.11</td><td>+143.1</td></tr>
 <tr><td>止盈</td><td>p_high_60</td><td>fwd_high_60</td><td>+0.4921</td><td>4.55</td><td>+158.4</td></tr>
@@ -175,13 +175,21 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 <table>
 <tr><td>窗口</td><td>IC(ens_60)</td><td>t_NW</td><td>Spearman</td><td>组合Sharpe</td><td>Lo-t</td></tr>
-<tr><td>全窗口</td><td>0.092</td><td>6.9</td><td>0.99</td><td>3.91</td><td>44.7</td></tr>
-<tr><td>折6</td><td>0.149</td><td>7.9</td><td>0.99</td><td>5.21</td><td>15.3</td></tr>
+<tr><td>全窗口</td><td>0.092</td><td>6.9</td><td>0.99</td><td>3.80</td><td>46.0</td></tr>
+<tr><td>折6</td><td>0.144</td><td>4.4</td><td>0.99</td><td>3.07</td><td>15.5</td></tr>
 <li>DM 检验(全窗口): ens_60 显著优于 4/4 个简单因子(动量/反转),最强 DM -5.9</li>
-<li>DM 检验(折6): ens_60 显著优于 4/4 个简单因子(动量/反转),最强 DM -5.9</li>
+<li>DM 检验(折6): ens_60 显著优于 4/4 个简单因子(动量/反转),最强 DM -8.6</li>
 </table>
 
 <blockquote>判定: ✅ 双窗口模型有效(详情 output/model_validity.md)</blockquote>
+
+<h3>折6 新段观察(2026-06-01..2026-08-28)</h3>
+<li>覆盖 63 个交易日/1212 标的; 标签成熟 3/63, WIP IC 均值 -0.113(小样本不判色)(全熟 ≈2026-11-20)</li>
+<li>升格判色: 待 27 个成熟日(≥30 自动升为折6窗判色依据之一)</li>
+<li>实时信号段 IC 对比: 无重叠(实时 composite 档案起于 08-14, 其标签需 +60 交易日 → 重叠首日 ≈11-1x 自动出现)</li>
+<li>段落组合(生产口径 k30/60D ×V2): 裸 S -0.08 | ×V2 S +2.44 | MDD -5.48% | 累计 +15.6%(对照同期实时信号段 -4%/-1.18, 63 天短样本)</li>
+<blockquote>折6 段观察不参与双窗口红绿灯; 成熟日 ≥30 后升格判色自动并入折6窗判定。</blockquote>
+
 
 <h2>🧪 生存性压力测试(六组健康度)</h2>
 <table>
@@ -344,7 +352,7 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 </main>
 <footer style="max-width:1080px;margin:0 auto;padding:0 20px 60px;color:var(--muted);font-size:12px">
-  生成时间: 2026-09-01 10:01 | 部署: deploy_weekly.py
+  生成时间: 2026-09-01 10:15 | 部署: deploy_weekly.py
 </footer>
 </body>
 </html>
