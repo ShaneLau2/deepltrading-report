@@ -29,7 +29,7 @@ li { margin:3px 0; }
 </head>
 <body>
 <main>
-<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-09-10 22:20 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
+<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-09-10 22:24 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
 <h1>历史决策记录</h1>
 
 <p>本文件只记录实验结果和已否决方案，不代表当前生产配置。</p>
@@ -718,6 +718,38 @@ li { margin:3px 0; }
 <p><code>top_models_by_cut</code> 键, 而生产那份文件(09-09 08:35)是<b>旧版产出、缺该键</b> → 守卫恒走</p>
 <p>「不在任何滚动 top5」分支判 <code>hold</code>(控制台因此长期显示「暂缓切换」)。生产侧该键由</p>
 <p><code>arena_cut_stability.py:116</code> 写出 ⇒ 重跑该脚本即可让判定恢复有据; 本次未擅自重跑。</p>
+
+<h2>2026-09-10 — 全站页面重渲染/重部署 + arena_cut_stability 刷新(卡从"空转"变"有据")</h2>
+
+<p><b>页面部署(用户指令「重新渲染部署所有页面」)</b></p>
+
+<table>
+<tr><td>页面</td><td>产物</td><td>线上核验</td></tr>
+<tr><td>日报</td><td><code>output/daily_report.html</code>(重渲染)→ <code>site/index.html</code></td><td>https://shanelau2.github.io/deepltrading-report/ —— 线上与本地 <b>sha256 逐字节一致</b>(<code>247d5b43…</code>, 3,166,725 B);SCALE GUARD 卡线上已显示「✓ 正常」(即本次 DD→known 修复已反映到线上台面)</td></tr>
+<tr><td>周报</td><td><code>champion_report.md</code> + <code>deploy_weekly.py</code> 自渲染 <code>champion_report.html</code></td><td>…/weekly.html(744,970 B,10 张交互图 + 2 张内联,生成时间为本次)</td></tr>
+<tr><td>决策记录</td><td><code>output/decision_log.html</code> → <code>site/decision-log.html</code></td><td>…/decision-log.html(已含今晚全部条目)</td></tr>
+<tr><td>OOS 面板</td><td><code>output/oos_panel.html</code>(只读刷新:IC n=1221、守卫 ✅、折6 页签 63 天)</td><td>本地查看器,不部署</td></tr>
+<tr><td>控制台 UI</td><td><code>web/static</code> → <code>site_ui/</code></td><td>https://shanelau2.github.io/deepltrading-ui/(<code>research.js</code>/<code>style.css</code> 已含盲测窗卡片代码)</td></tr>
+</table>
+
+<p>另:控制台 8766 已 <code>launchctl kickstart -k</code> 重启(HTTP 200),新卡片生效。</p>
+<p>⚠ 部署走 <code>--skip-verify</code>:<b>本环境 Chrome 无法启动</b>(沙箱拒绝初始化)→ deploy_verify 的截图/回滚链</p>
+<p>跑不了;改用 <b>HTTP 抓取核验</b>(状态码/字节数/sha256/标记字符串),日报已逐字节验证。周报部署前按项目</p>
+<p>规则先跑 <code>trio_vs_ens_backtest.py --sync-check</code>(✅ 全部一致)作为守门。</p>
+
+<p><b>arena_cut_stability 刷新(用户批准;<code>--skip-existing</code> 复用 09-09 四份 per-tag 结果,未重跑竞技场)</b></p>
+<li>旧产物<b>缺 <code>top_models_by_cut</code> 键</b> → 守卫拿空字典 → 恒判 <code>hold</code>(那张卡此前是"空转");</li>
+<li>刷新后<b>有据</b>:fixed cut(2025-11-01)前五 = cat, ens_trio, ens_cat, mlp_knife, <b>ens(第 5)</b>;</li>
+<p>  roll3m = mlp_vol_60__add__vol_12m, …__add__dist_low_250, cat, …;roll6m/roll9m = cat, ens_cat, ens_trio, …</p>
+<p>  ⇒ <b>生产冠军 ens 只在固定口径前五、三个滚动口径全部落榜</b>(滚动冠军 = cat ×3 + 一个 mlp_vol 变体)。</p>
+<li>结论:守卫的「暂缓切换 / 冠军可能依赖老化评估窗」<b>成立且现在基于真实证据</b>;控制台上那张卡</li>
+<p>  从"字段缺失造成的恒定告警"变为有效判定(此前被测试写入的合成值也已被真实告警覆盖)。</p>
+
+<p><b>决策影响: 无</b>(口径提醒而非切换依据):① 这是<b>竞技场口径</b>(26 特征研究集 / port_stats 裸 Sharpe /</p>
+<p>进程内重训),与生产 33 特征 × V2 不同轴,只作佐证层;② 生产切换仍被 ② <code>purged_wf</code> 卡住(今晚新跑</p>
+<p>Δ裸Sharpe −0.33 / p_pos 0.333)且受 FROZEN 约束(2027-01-01 前只允许回滚)。归档为「下一轮 OOS 决策</p>
+<p>输入」,与既有两条独立证据(复检 Δ 未达 0.30;竞技场 ens_cat 双窗胜出)同向:**ens 家族的近期优势弱于</p>
+<p>cat / ens_cat 变体**。</p>
 
 </main>
 </body>
