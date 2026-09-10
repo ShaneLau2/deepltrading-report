@@ -323,7 +323,7 @@ tbody tr[data-ticker]:hover td{background:#F0F4FF !important}
 <script>
 /* 抽屉详情数据(每标的 60 日 K 线)体量大, 从页面拆到 drawer_data.js 按需加载:
    首屏不解析 6MB+ JSON, 首次开抽屉时拉取, 4s 后空闲预取保证即时可用。 */
-var _DD=null,_DD_LOADED=false,_DD_PENDING=null,_DD_URL='drawer_data.js';
+var _DD=null,_DD_LOADED=false,_DD_PENDING=null,_DD_URL='2026-09-10.drawer_data.js';
 function loadDrawerData(){
   if(_DD_LOADED)return Promise.resolve(_DD);
   if(_DD_PENDING)return _DD_PENDING;
