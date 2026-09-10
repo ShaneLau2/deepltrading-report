@@ -29,7 +29,7 @@ li { margin:3px 0; }
 </head>
 <body>
 <main>
-<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-09-10 18:18 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
+<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-09-10 22:20 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
 <h1>历史决策记录</h1>
 
 <p>本文件只记录实验结果和已否决方案，不代表当前生产配置。</p>
@@ -325,6 +325,399 @@ li { margin:3px 0; }
 <p>硬编码 <code>calibrated_at = 2026-09-01</code>, 而 <code>load_turnover_calibration</code> 拿它与真实时钟比</p>
 <p>(CALIB_MAX_AGE_DAYS=7)→ 2026-09-10 起过期回退名义值, 该用例假红(与本次改动无关)。</p>
 <p>改为动态生成 <code>pd.Timestamp.now()</code>(AGENTS.md 测试约定 7)。</p>
+
+<h2>2026-09-10 — 审查后修复第一批: 缓存复合毁坏 + FROZEN 闸门下沉(fail-closed)</h2>
+
+<p><b>来源</b>: 全项目独立审查(9 路只读审查 + 主 Agent 逐条复算)。本批只做「代码缺陷已明确 +</p>
+<p>改动可自证」的两项;其余(暴露层同日前视、执行层 fail-open、控制台 token、关卡 fail-open、</p>
+<p>OOS 面板 vintage 守卫)列在文末待办,不在本批。</p>
+
+<p><b>① 下载器拆股重标定无幂等 → 缓存被 (1/R)^n 复合毁坏(阻塞, 已修)</b></p>
+
+<p>审查发现 <code>downloader._rebase_for_splits</code> 只校验断点<b>方向</b>, 不校验<b>幅度</b>, 于是</p>
+<p>「拆股日 ±4 天内的真实大幅波动」每轮都命中一次重标定, 缓存历史按 (1/R)^n 无上限复合。</p>
+<p>主 Agent 独立复算确认: KORU 缓存/面板比值<b>恒为 0.000125 = (1/20)³</b>(拆股 20:1 于</p>
+<p>2026-07-15, 被套 3 次);同型 HUT(1/5)⁶、QXO(1/2)³、ERX/GDXU 10⁻³~10⁻⁴、DELL 56.9、</p>
+<p>GBTC ~10¹¹、以及分段损坏的 DD。<b>面板当时仍干净</b>(refresh_panel 只追加面板末日之后的行),</p>
+<p>但缓存是文档指定的「面板唯一事实源」,<code>signals.py</code> 的拆股重建路径(删该 symbol 全部面板行</p>
+<p>→ 从缓存全量重灌)一旦触发就会把垃圾灌进面板。</p>
+
+<p>修复: ① <code>SPLIT_AMPLITUDE_TOL=0.25</code> —— 断点幅度必须 ≈1/R 才认作拆股断点(真实 -18% 波动</p>
+<p>对 20:1 的 0.05 目标直接排除);② 后置校验 <code>_rescale_clears_breakpoint</code> —— 缩放后该断点</p>
+<p>必须真的消失, 否则放弃重标定并原样返回(杜绝下一轮再套一次)。回归 3 例(含「连跑 3 次刻度</p>
+<p>完全不动」)。<b>权威口径提醒</b>: 规则是「断点幅度自证 + 缩放必须生效」, 不是「拆股日附近</p>
+<p>一律重标定」。</p>
+
+<p><b>② 存量缓存修复(已落盘, 带备份)</b></p>
+
+<p>新增 <code>src/cache_scale_repair.py</code>(默认 dry-run)。口径实测: 面板 Close 与缓存列关系<b>不统一</b></p>
+<p>—— 分红股(如 VZ/T)面板 == 缓存 <b>AdjClose</b>, MNST 型面板 == 缓存 <b>Close</b>;故判定必须取</p>
+<p><b>best-of-Close/AdjClose</b>, 否则把所有分红股误判为损坏。判据用<b>坏行占比</b>(≥1% 且 ≥20 行)</p>
+<p>而非只看中位比值 —— 分段损坏(如 ERX 36% 行坏、GBTC 14.5%)中位仍 ≈1, 而现存的</p>
+<p><code>scale_continuity_guard</code> 只看「整段恒定比率」, 所以当时只报出 KORU 1 只(漏 7 只)。</p>
+<p>修复方式 = 逐行按 <code>r_i / tail_ratio</code> 缩放(保留全部行、不动 Volume)。</p>
+<p><b>已修 7 只</b>(KORU 2506 行 / DELL 595 / ERX 912 / GBTC 366 / GDXU 480 / HUT 1445 / QXO 1965),</p>
+<p>修后复验坏行 0、比值中位 1、行数与末行不变;备份 <code>data/cache/{sym}.csv.bak_scalerepair_*</code>。</p>
+<p><b>DD 未自动修</b>: 其因子 0.4725 是分段常数但<b>不是</b>拆股比例的整数次幂(疑 Corteva 分拆复权</p>
+<p>口径差异), 按「宁可交人工」原则跳过, 需人工核。</p>
+
+<p><b>③ FROZEN 闸门下沉 + 全面 fail-closed(阻塞, 已修)</b></p>
+
+<p>规则(2026-09-08 裁决)原先只实现在控制台一键研究链 <code>web/research_worker._frozen_gate</code>;</p>
+<p>而 cron 链的 <code>signal_archive._run_recovery → _do_retrain</code>、<code>src/retrain.py</code>(控制台「重训 /</p>
+<p>强制重训」按钮直调)、<code>src/train_final.py</code>(生产 MLP 真正落盘处)<b>全程没有任何冻结判定</b></p>
+<p>—— 09-08 那次违规重训走的正是这条路径。更糟的是 <code>_run_recovery</code> 是 <b>fail-open</b>: 回滚</p>
+<p>失败反而升级为「重训」, 即安全网失效时执行被禁止的动作。</p>
+
+<p>修复: 新增 <code>src/frozen_guard.py</code>(单一事实源, fail-closed: 读不到/损坏/非 approved/</p>
+<p>佐证 streak&lt;30 一律拒绝), 接入 4 处写入路径 —— <code>retrain.save_model</code>、</p>
+<p><code>signal_archive._do_retrain</code>、<code>train_final.main</code>(仅拦生产 models/, 实验目录不受限),</p>
+<p>并把 <code>_run_recovery</code> 改为: 回滚失败 + 冻结期 → 停在此处交人工(不再重训);解冻后保留</p>
+<p>「回滚→重训」原语义。另修一处隐性陷阱: <code>train_final.py</code> 末尾是裸 <code>main()</code>, <code>return 3</code></p>
+<p>会丢退出码(调用方视为成功), 改用 <code>SystemExit(3)</code>。</p>
+
+<p><b>回归</b>: 新增 <code>tests/downloader/test_rebase_splits.py</code>(+3)、</p>
+<p><code>tests/market/test_cache_scale_repair.py</code>(10)、<code>tests/signals/test_frozen_guard.py</code>(11);</p>
+<p>相关既有套件 254 passed 全绿。<code>retrain.py --dry-run</code> 等只读路径不受闸门影响(已冒烟)。</p>
+
+<p><b>本批之后仍待处理(按优先级)</b>: ① <code>risk_control_v2</code> 暴露层同日前视(主 Agent 复算:</p>
+<p>如代码 Sharpe 3.92 / MDD -9.27%, 暴露滞后一日 1.59 / -17.43%, 裸基线 1.51 / -51.24% ——</p>
+<p>即 V2 的 Sharpe 增益基本是该前视造成的, 而 <code>champion_stop</code> 2026-08-25 已修同缺陷);</p>
+<p>② 执行层暴露读取失败 fail-open 到满仓;③ 控制台 token 无 Origin 即签发 + <code>deploy(tag)</code></p>
+<p>路径穿越;④ <code>promotion_gates</code> 陈旧证据变 pending(09-24 起自动放行)与关卡 ⑪ 读错窗口;</p>
+<p>⑤ <code>frozen_forward_tracker</code> 未剔除 <code>is_backfilled</code>(实测其窗口 11 个成熟日 <b>100% 是回灌行</b>);</p>
+<p>⑥ <code>oos_fold_extend --append</code> 覆盖已发布 OOS 行;⑦ 时钟/通知类(3 处 guard re-raise、</p>
+<p>ServerChan 配额标志被局部变量遮蔽、实例锁丢排程槽无告警)。</p>
+
+<h2>2026-09-10 — 审查后修复第二批: 执行层 fail-closed / 控制台两高危 / 验证设施 fail-open</h2>
+
+<p><b>④ 执行层暴露读取 fail-closed(<code>src/exposure_source.py</code> 新增)</b>: trade_plan 的 <code>pos_size</code></p>
+<p>原在 <code>v2_exposure_history.json</code> 缺失/损坏时静默回退 <b>1.0 满仓</b>(单标 3.33%), 把当日目标暴露</p>
+<p>(0.15~0.45)放大 2~6 倍且无告警; <code>v2_prod_exposure.annotate_trade_plan</code> 同款 <code>rec.get(..., 1.0)</code>。</p>
+<p>现收成单一事实源: history → 当日快照(<b>限龄 3 天</b>)→ <code>available=False</code>;不可用时</p>
+<p><b>pos_size 置 NaN + exec_mode 标「暴露不可用(拒绝给仓位数)」+ 手机告警(6h 冷却)</b>,</p>
+<p><code>annotate_trade_plan</code> 也拒绝覆盖(非正/缺失一律不动)。</p>
+
+<p><b>⑤ 控制台两处高危(已实测复现 → 已修)</b>:</p>
+<li><b>token 签发</b>: 原「无 Origin 头即签发」= 对任何非浏览器客户端<b>无条件</b>签发(实测</li>
+<p>  <code>curl -H "Host: attacker.example:8766" .../api/auth/token</code> → 200 + 明文 token), 而这正是</p>
+<p>  <b>DNS rebinding</b> 形态(rebinding 页面同源请求不带 Origin)。改为<b>必须 Host 为回环</b></p>
+<p>  (127.0.0.1/localhost/[::1])再谈 Origin。实测修复后: 回环 200 / <code>Host=attacker.example</code> <b>403</b>。</p>
+<li><b><code>deploy(tag)</code> 路径穿越</b>: tag 取自请求体且未清洗(而 <code>start_training</code> 早已清洗)→</li>
+<p>  <code>../../..</code> 可把任意含 config.json 的目录整体拷进生产 <code>models/</code>, 而 signals 会</p>
+<p>  <code>torch.load(models/model.pt)</code> = 任意 pickle 反序列化 = 代码执行 + 静默换冠。现统一清洗 +</p>
+<p>  <code>resolve()</code> 后强制落在 <code>EXPERIMENT</code> 内(挡 <code>..</code> 与 symlink)。</p>
+
+<p><b>⑥ 验证设施 fail-open 三修</b>:</p>
+<li><b>陈旧 ≠ 改善(<code>promotion_gates._check_purged_wf</code>)</b>: 原先「产物陈旧」与「无产物」共用</li>
+<p>  pending 分支 → <code>data/purged_wf.json</code> 超 <code>STALE_DAYS=14</code>(<b>2026-09-24 起</b>)就自动从</p>
+<p>  fail 变 pending、verdict 从 BLOCKED 变 WAIT, 链<b>因为证据烂掉</b>而开始重训。必过关卡的</p>
+<p>  陈旧产物现在维持 <b>fail</b>(报「陈旧不等于改善, 重跑后重新判定」)。</p>
+<li><b>关卡 ⑪ 读错窗口 + READY 不可达</b>: ⑪ 标称「2026-09-04 冻结点后真实数据」, 实际读</li>
+<p>  <code>frozen_forward_tracker_state</code>(窗口起点 2026-05-28, 早于冻结点约 3 个月); 且三条返回路径</p>
+<p>  <b>全是 pending</b>, 而它 <code>required=True</code> → verdict 的 READY 分支永不可达。现改读</p>
+<p>  <code>blind_window_progress</code>(冻结点后 ENS 门槛轨): 未判色 → pending; 判色且结论为「建议升级」</p>
+<p>  → <b>pass</b>(READY 从此可达); 结论为「维持 ENS」→ <b>fail</b>(挑战者未过最终现实检验, 挡换冠)。</p>
+<li><b>冻结例外追踪器测错对象(<code>frozen_forward_tracker</code>)</b>: 它未剔除 <code>is_backfilled</code> 回灌行</li>
+<p>  (回灌 composite = 冻结 OOS 面板/折6 vintage, 非当日实时预测)。实测其窗口内 **13,065 行</p>
+<p>  100% 是回灌行** → 原先算出的「冻结段 IC -0.0858、连负 9 天」全部来自折6 模型, 等于用错</p>
+<p>  对象的数字去触发「冻结例外」。现 <code>real_rows()</code> 剔除回灌行; 剔除后无真实成熟日 → 明确 SKIP</p>
+<p>  并报出被剔行数, 不产出像证据的数字。</p>
+<li><b>OOS 面板并入默认不改写已发布行(<code>oos_fold_extend.merge_panel</code>)</b>: 原 <code>keep='last'</code> +</li>
+<p>  新折优先 → 已发布的 (symbol, Date) 行会被后来的重训覆盖, 而 <code>daily()</code> 会自动跑 <code>--append</code>。</p>
+<p>  现默认 <b>保留已发布值</b>(只新增日期)并打印「新增/重叠键/改写」计数; 人工修复需显式</p>
+<p>  <code>--overwrite-existing</code>(如 2026-09-09 清理不合规旧折行)。</p>
+
+<p><b>通知链沉默修复(self_evolve)</b>: ① 三处 advisory guard(守门折提醒/折6 成熟度/trio 复检)</p>
+<p>原先在 <code>except</code> 里多写 <code>raise</code>, 任一提醒模块抛异常就掐断盘后链剩余全部步骤(暴露快照/日报/</p>
+<p>部署/唯一那条收盘推送), 而 dispatcher 丢弃 rc → 现与兄弟 guard 一致只 log;</p>
+<p>② <code>_serverchan_quota_exhausted</code> 在 <code>push_to_phone</code> 内缺 <code>global</code> → create 局部变量遮蔽模块级</p>
+<p>标志, 使配额短路成死代码(09-03 修复实际无效), 白花 2 次 POST 才降级 → 补 <code>global</code>(dis 验证);</p>
+<p>③ 实例锁跳过原先只留一行日志, 而 cron 按槽去重不重试 → <b>整条盘后链被静默吃掉</b>(实测</p>
+<p>2026-09-09 11:30 ET 槽); 现补带 6h 冷却的手机告警。</p>
+
+<p><b>回归</b>: 新增 <code>tests/model/test_exposure_source.py</code>(8)、<code>tests/web/test_console_security.py</code>(13)、</p>
+<p><code>tests/market/test_scale_guard_segment.py</code>(6)、<code>tests/signals/test_frozen_forward_tracker_vintage.py</code>(5)、</p>
+<p><code>tests/report/test_promotion_gates_failclosed.py</code>(12); 修 <code>scale_continuity_guard</code> 时暴露并修正</p>
+<p>「比率方向被改成 panel/cache → 既有 APH 用例期望 0.25 变 4.0」的回归(方向恢复 cache/panel,</p>
+<p>只保留 best-of-two)。全量 987+ passed。</p>
+
+<p><b>剩余(下一批)</b>: ⑦ <code>risk_control_v2</code> 暴露层同日前视改因果口径(需连带更新 V2 全套已发布数字</p>
+<p>与文档, 属口径决策);⑧ 死代码/仓库卫生(3 个一次性实验 CSV 占 502MB、<code>output/</code> 占 53% 跟踪文件、</p>
+<p>279 个孤儿脚本);⑨ <code>metrics()</code> 两套单位(max_dd 分数 vs 百分比)与日报双 IC 口径(10 vs 60)。</p>
+
+<h2>2026-09-10 — 审查后修复第三批: V2 暴露层同日前视改因果口径(<b>口径变更, 数字作废重述</b>)</h2>
+
+<p><b>⑦ 缺陷</b>: <code>risk_control_v2.compute_v2_exposure</code> 以 <code>adjusted = returns * composite</code> 归因,</p>
+<p>而 <code>composite[i]</code> 由 <code>dd[i] = cumprod(1+returns)</code> 决定 —— <code>dd[i]</code> 含 <code>returns[i]</code> 本身, 等价于</p>
+<p><b>用当天的涨跌决定当天是否降仓</b>。<code>champion_stop.py</code> 已在 2026-08-25 修过同缺陷(注释原文</p>
+<p>「原先用 dd[i] 决定 gated[i]…乐观偏差一天」), 而 08-27 上线、成为生产口径的 V2 <b>没修</b>;</p>
+<p>现有 <code>lookahead_audit.signal_shift_test</code> 只 shift 信号列、从不重算暴露层, 所以历次审计都抓不到。</p>
+
+<p><b>实测(生产裸收益 1281 天, 经真实代码路径 <code>compute_v2_exposure</code>)</b>:</p>
+
+<table>
+<tr><td>口径</td><td>Sharpe</td><td>MDD</td><td>累计</td></tr>
+<tr><td>同日(旧, 前视)</td><td>3.92</td><td>-9.27%</td><td>+4677%</td></tr>
+<tr><td><b>因果(新, 报告口径)</b></td><td><b>1.59</b></td><td><b>-17.43%</b></td><td><b>+354%</b></td></tr>
+<tr><td>裸基线(无暴露层)</td><td>1.51</td><td>-51.24%</td><td>+1370%</td></tr>
+</table>
+
+<p><b>修复设计(关键取舍)</b>: 只把<b>收益归因与指标</b>改成因果(暴露滞后一期),</p>
+<p><b>不动 <code>composite_exposure</code> 序列本身</b> —— 实盘 <code>v2_prod_exposure.py:845</code> 用的是它的<b>末元素</b></p>
+<p>(基于最近一个已完成交易日的 dd, 决策时确实已知), 因此 <b>真实仓位规格与今日下单完全不变</b></p>
+<p>(实测末元素仍 0.4500); 变的只有回测/报告口径。这一点与「改暴露序列」有本质区别:</p>
+<p>后者会改动实盘仓位, 而真正的错在「把 dd[i] 派生的仓位乘回 returns[i]」这个配对。</p>
+
+<p><b>因此作废/需重述的数字</b>: ① 本文件与 AGENTS.md 长期引用的「V2 历史段 Sharpe 3.91 / MDD -8.3%」;</p>
+<p>② <code>champion_equity.csv</code> 及其派生的周报 V2 对照区块、<code>risk_metrics.md</code>;③ <code>oos_fold6_impact</code> 与</p>
+<p><code>trio_vs_ens_backtest</code> 的 ×V2 列;④ 基于这些数字做的 2026-08-27「生产切换 V2」与 2026-09-08</p>
+<p><code>dd_recover_confirm_days</code> 0-vs-5 扫描 —— <b>需按新口径复核</b>(历史段 V2 相对裸基线的 Sharpe 优势</p>
+<p>基本消失, 但 MDD 保护 -51%→-17% 仍然成立, 故 V2 作为「回撤保护层」的存在依据不变, 只是不能再</p>
+<p>宣称它提升了风险调整后收益)。</p>
+<p><b>遗留动作</b>: 重跑 <code>champion.py --update</code> 让净值与报告与新口径一致(周五周链 4b 也会自动做);</p>
+<p>AGENTS.md 第 9 条已同步标注修正与待办。</p>
+
+<p><b>回归</b>: <code>tests/model/test_rc_v2_causal_exposure.py</code>(7): 因果滞后等式、<code>composite_exposure</code></p>
+<p>未被改动、前视虚高方向与审计字段、修复后 MDD 仍优于裸基线、IC 层乘法组合不变、空输入抛错(不改静默)。</p>
+
+<h2>2026-09-10 — V2 因果口径<b>全链</b>落地 + 产物重算(修正前一批的漏改)</h2>
+
+<p><b>背景(自我纠错)</b>: 第三批只改了 <code>compute_v2_exposure</code> 内部的 <code>adjusted_returns</code>/指标, 但</p>
+<p>*<i>六个消费方各自 <code>raw </i> composite</code> 重新派生净曲线**, 因此产物里的虚高数字一个都没变</p>
+<p>(<code>champion_report.md</code> 仍是「Sharpe 3.90 / 最大回撤 -8.3%」)。审查教训: 改了口径的<b>唯一事实源</b></p>
+<p>不等于改了系统 —— 消费方复制粘贴的算术必须一并收口。</p>
+
+<p><b>修复</b>: 新增 <code>risk_control_v2.apply_exposure(returns, composite)</code>(因果滞后一期, 单一事实源,</p>
+<p>含"禁止消费方自行派生"的说明), <code>compute_v2_exposure</code> 内部改用它;六个消费方全部改走它:</p>
+<p><code>champion.py</code> / <code>champion_report.py</code>(读模块指标, 自动受益) / <code>risk_metrics_report.py</code> /</p>
+<p><code>caliber_guard.py</code> / <code>trio_vs_ens_backtest.py</code> / <code>oos_fold6_impact.py</code>。</p>
+<p>回归闸门: <code>tests/model/test_rc_v2_causal_exposure.py</code> 新增「消费方不得再出现 <code>raw * comp</code> 等同日</p>
+<p>写法」的源码级断言(只看代码行, 注释里引用被禁写法不算)。另修 <code>champion.py</code> 与 <code>caliber_guard.py</code></p>
+<p>两处 <code>decay_exposure_cap</code> 之后仍按同日配对的问题(滞后在封顶之后施加, 保持封顶语义)。</p>
+
+<p><b>产物重算(2026-09-10 执行)</b>:</p>
+
+<table>
+<tr><td>产物</td><td>修复前</td><td>修复后</td></tr>
+<tr><td><code>data/champion_equity.csv</code></td><td>Sharpe 3.82 / 净值 36.20 / dd -1.41%</td><td><b>Sharpe 1.47 / 净值 3.79(+279%) / dd -7.22%</b></td></tr>
+<tr><td><code>output/champion_report.md</code> 顶部</td><td>3.90 / -8.3%</td><td><b>1.47 / -16.8%</b></td></tr>
+<tr><td>V2 对照表</td><td>裸 1.5 / 纯DD 3.91 / <b>V2 3.82</b></td><td>裸 1.52 / 纯DD 1.60 / <b>V2 1.47</b></td></tr>
+<tr><td><code>data/risk_metrics.json</code></td><td>(同日前视口径)</td><td><b>full.sharpe 1.474 / full.mdd -16.85% / oos.sharpe 1.987</b></td></tr>
+<tr><td>末行暴露(实盘规格)</td><td>0.45</td><td><b>0.45(不变)</b></td></tr>
+</table>
+
+<p><b>⚠ 由此暴露的新决策点(需人工审议, 本文件仅记录事实)</b>: 同窗口 V1(DD8+VT18)</p>
+<p><b>Sharpe 1.60 / MDD -27.4%</b> 现在优于 V2 的 <b>1.47 / -16.8%</b> —— 2026-08-27「生产切换 V2」的</p>
+<p>依据(旧口径 V2 3.82 远高于 V1 1.60)在因果口径下<b>反转</b>。V2 剩余的立足点是回撤更浅</p>
+<p>(-16.8% vs -27.4%), 即"用约 0.13 Sharpe 换 10.6pp 回撤"的取舍 —— 这是策略选择, 需用户裁决;</p>
+<p>在裁决前<b>不动生产</b>(暴露层代码与实盘规格均未变)。同理 2026-09-08 的</p>
+<p><code>dd_recover_confirm_days</code> 0-vs-5 扫描需在新口径下重跑。</p>
+
+<h2>2026-09-10 — 因果口径下的「最佳模型 / 最佳风控」复扫(两个旧决策需重新审议)</h2>
+
+<p><b>背景</b>: V2 暴露层同日前视修复 + 全链收口(见前两条)后, 所有以 ×V2 为依据的结论必须重算。</p>
+<p>以下为按因果口径(<code>apply_exposure</code>)重扫的结果。</p>
+
+<p><b>① 最佳风控(双窗口)</b>: 见 AGENTS.md「风控层因果口径复扫结果」表。要点:</p>
+<li>全窗最优 = <b>纯 DD 阶梯 confirm=0(1.60 / -17.4%)</b>;现状 <b>V2 = DD×IC mul confirm=0 为 1.47 / -16.85%</b></li>
+<p>  → <b>IC 健康层在全窗是纯拖累(-0.13 Sharpe)</b>;近半年 V2 与纯 DD 完全相同(1.67 / -9.51%, 平均暴露 49% vs 52%)</p>
+<p>  → IC 层「只减仓、不加保护」。</p>
+<li><b>没有任何风控变体在双窗口都胜过裸基线</b>(全窗 1.60&gt;1.52 ✓ / 近 6 月 1.67&lt;2.11 ✗)→ 按 AGENTS.md</li>
+<p>  「带风控变体双窗口都胜出才允许挂风控」的铁律, <b>风控层当前不满足挂载条件</b>;它在双窗口都赢的只有 MDD。</p>
+<li><code>dd_recover_confirm_days</code> 的 2026-09-08 决策(0 vs 5, 当时的依据是「0 日 3.80/-8.3%」这一**已作废的</li>
+<p>  前视数字<b>)在因果口径下</b>结论不变**: confirm=0 全窗 1.60 仍最优且参数最少(2 日 1.42 是坑, 10 日回撤最浅</p>
+<p>  但近半年 Sharpe 1.44)。<code>data/champion_config.json → 仓位执行 → 恢复防抖</code> 的注记已按新数字重写(带备份),</p>
+<p>  <code>dd_recover_confirm_days</code> 值<b>未改</b>。</p>
+
+<p><b>② 最佳模型(不受本次修复影响)</b>: 竞技场选股用 bare <code>port_stats</code> + <code>champion_stop</code> 的 DD8 门控</p>
+<p>(后者 2026-08-25 已因果),<b>不引用 V2 暴露层</b>(已核 <code>model_arena.py</code> 无 v2/composite 引用),</p>
+<p>故模型排名与本次修复无关:</p>
+<li>冠军 = <b>cat</b>(2026-09-08): 双窗口 IC 0.1468/0.1110、Sharpe 3.31/2.75、MDD -9.0%, 与现役 ens(0.1217/0.1239、</li>
+<p>  2.24/2.22、-12.9%)相比双窗口全胜。</p>
+<li><b>但换冠被三重拦住</b>: <code>promotion_gates</code> = BLOCKED(purged_wf Δ裸Sharpe median <b>-0.33</b>);</li>
+<p>  <code>rc_approved=False</code>(风控增益 近/长 = <b>-0.913 / -0.605</b>, 即挂风控会削弱 cat);</p>
+<p>  连冠 <b>2/5</b> 周(与生产重叠仅 0.368 → 按规则需再加 2 周)。→ <b>生产仍为 ens_60</b>(FROZEN 期)。</p>
+<li>角色模型(止盈/止损/时点): 冠军均为<b>现役自身</b>(high__prod / low__prod, 双窗口 IC 0.52/0.52 与 0.51/0.46,</li>
+<p>  挑战者未胜出);时点模型 timing__prod <code>pass_dual=False</code>、双窗口 IC ≈ 0.000 → <b>时点模型无判别力</b>,</p>
+<p>  出厂即不该参与执行。</p>
+
+<h2>2026-09-10 — 用户决策落地(Phase A)+ 隔离 production-like E2E(Phase B)</h2>
+
+<p><b>Phase A(用户决策表, 逐条落地)</b></p>
+
+<table>
+<tr><td>项</td><td>决策</td><td>落地</td></tr>
+<tr><td>V1/V2</td><td><b>不切换</b>, 暂停 08-27「V2 优于 V1」结论, 下一轮 OOS 复比</td><td>生产未动; 新增 <code>risk_control_v2 --challenger</code>(build_challenger)双窗口对比设施 → <code>output/risk_layer_challenger.json</code></td></tr>
+<tr><td>IC Health</td><td><b>mul → min</b></td><td><code>champion_config.仓位执行.ic_health_mode="min"</code>(带备份)+ <code>production_rc_config()</code> 透传 <code>combo</code>; 产物已按 min 重算: <code>champion_equity.csv</code> Sharpe <b>1.55</b>/MDD <b>-17.12%</b>, <code>risk_metrics.json</code> full.sharpe <b>1.552</b>, 周报 V2 行 <b>1.55</b>;<b>今日末行暴露仍 0.45</b>(ic 层=1 时 min≡mul)</td></tr>
+<tr><td>DD cache</td><td><b>暂不修</b>, 改做来源审计</td><td>新建 <code>docs/metric-provenance-audit.md</code>(A1 DD 0.4725 来源四问 / A2 metrics 单位 / A3 双 IC / A4 竞技场口径澄清)</td></tr>
+<tr><td>intraday-credit</td><td><b>参数化, 默认 w=0, 只进归因</b></td><td><code>intraday_credit_attribution(returns, composite, w)</code>, 默认 0, 校验 [0,1]; 新增 <code>--credit-scan</code>(w=0/0.25/0.5/0.75/1.0); <b>源码级守卫测试禁止 champion/v2_prod/signals/champion_report/risk_metrics 引用它</b></td></tr>
+<tr><td>仓库卫生</td><td>现在不删</td><td>未动</td></tr>
+<tr><td>两个碰生产的测试</td><td><b>必须隔离</b></td><td><code>test_v2_exec_sizing</code> 的 <code>heal_snapshot()</code> 自愈路径删除 → 改为只读 + 脱节即 skip;<code>test_self_evolve_lock</code> CLI 用例改用 <b>tmp 锁 + tmp ROOT + push 打桩</b></td></tr>
+<tr><td>signals fall-through</td><td>下一阻塞项, 修</td><td>磁盘面板读不出行数 → <b>拒绝落盘 + 告警</b>(原为"跳过检查继续覆写")</td></tr>
+<tr><td>红灯</td><td>不刷快照</td><td>未动(仍为数据驱动快照红灯)</td></tr>
+</table>
+
+<p><b>Phase B(隔离 production-like E2E, <code>scripts/e2e_staging.py</code>)</b>: 用 APFS copy-on-write clone</p>
+<p>把 src/web/scripts/models/data/output 复制到 <code>staging/e2e_&lt;ts&gt;/</code>, 以 staging 为 cwd 跑真实脚本</p>
+<p>→ <code>Path(__file__).parent.parent</code> 使 ROOT=staging, 写入天然隔离;通知配置置空(<code>{}</code>)走真实</p>
+<p>"无可用通道"分支;不跑 deploy(真实 deploy 会 git push 到公共仓库 = 外部副作用),只跑其</p>
+<p><code>render()</code>。<b>结果: 全绿</b> —— trade_plan(pos_size 30/30) / V2 快照自洽 / signal_archive 读写 /</p>
+<p>train_final 只写实验目录 / 报告渲染 / 通知零成功推送 / <b>生产文件零改写零新增(size+mtime+inode 逐文件)</b>。</p>
+
+<p><b>E2E 抓到的两个真问题(已修)</b></p>
+<li><b><code>retrain.py</code> 谎报成功(阻塞级)</b>: FROZEN 闸门<b>确实</b>拒绝了写盘(staging 的 models 与生产</li>
+<p>   逐字节相同、无新备份), 但 <code>save_model()</code> 的返回值被丢弃 → 脚本照样打印</p>
+<p>   "RETRAIN COMPLETE / New model saved to …" 并 <code>return 0</code>。调用方(控制台按钮/研究链/周链)</p>
+<p>   会认为重训成功。已改为: 捕获返回值 → 拒绝时打印 "⛔ RETRAIN BLOCKED —— 未写盘"、</p>
+<p>   跳过 shadow_live、<b>rc=3</b>;E2E 复跑确认 rc=3。</p>
+<li><b>测试造成真实手机推送</b>: 新增的实例锁告警使 <code>test_self_evolve_lock</code> 的 CLI 用例在</li>
+<p>   触发 InstanceLocked 时<b>真实推送</b>(实测 2026-09-10 18:55 Bark 成功 1 次)并写生产</p>
+<p>   <code>output/.instance_skip_alert</code>。已改为子进程内同时替换 ROOT 与 push_to_phone。</p>
+
+<p><b>challenger 首轮结果(下一轮 OOS 决策输入, 生产不因本表切换)</b>:</p>
+
+<table>
+<tr><td>窗口</td><td>方案</td><td>Sharpe</td><td>CAGR</td><td>MDD</td><td>Calmar</td><td>年Sharpe中位</td><td>正年占比</td></tr>
+<tr><td>全窗</td><td>裸基线</td><td>1.52</td><td>69.8%</td><td>-51.2%</td><td>1.36</td><td>2.03</td><td>100%</td></tr>
+<tr><td>全窗</td><td>V1(DD8+VT18)</td><td>1.60</td><td>39.4%</td><td>-27.4%</td><td>1.44</td><td>1.72</td><td>100%</td></tr>
+<tr><td>全窗</td><td><b>V2(min, 生产)</b></td><td>1.55</td><td>32.5%</td><td><b>-17.1%</b></td><td><b>1.90</b></td><td>1.61</td><td>83%</td></tr>
+<tr><td>冻结OOS</td><td>V1</td><td>1.69</td><td>42.2%</td><td>-27.4%</td><td>1.54</td><td>2.02</td><td>100%</td></tr>
+<tr><td>冻结OOS</td><td><b>V2(min)</b></td><td><b>1.70</b></td><td>35.8%</td><td><b>-17.1%</b></td><td><b>2.09</b></td><td>1.88</td><td>83%</td></tr>
+<tr><td>实时延伸</td><td>裸基线</td><td>0.70</td><td>21.1%</td><td>-15.1%</td><td>1.40</td><td>0.70</td><td>100%</td></tr>
+<tr><td>实时延伸</td><td>V1</td><td>0.06</td><td>-1.1%</td><td>-9.9%</td><td>-0.12</td><td>0.06</td><td>100%</td></tr>
+<tr><td>实时延伸</td><td>V2(min/mul)</td><td><b>-0.54</b></td><td>-13.9%</td><td>-9.5%</td><td>-1.46</td><td>-0.54</td><td>0%</td></tr>
+</table>
+
+<p>读法: 冻结 OOS 上 V2 与 V1 的 Sharpe 基本持平(1.70 vs 1.69)而 V2 的 MDD/Calmar 更优;</p>
+<p>但<b>实时延伸段 V2 明显最差</b>(-0.54 vs 裸 0.70), V1 也仅 0.06 —— 即近 70 个交易日**任何风控层</p>
+<p>都在拖累<b>, 与"风控增益状态依赖"一致。故"V1 vs V2"在两种窗口给出相反排序, 正是</b>不能现在切换**</p>
+<p>的量化理由。</p>
+
+<h2>2026-09-10 — 事故: 刻度护栏新检测器漏接显示分支 → 真实每日链被中断(已修 + 回归锁)</h2>
+
+<p><b>背景</b>: <code>scale_continuity_guard</code> 本日新增第 3 个检测器 <code>segment_scale</code>(抓「从序列头部延伸到</p>
+<p>拆股日」的复合错刻度, 此前 8 只漏报 7 只), 但<b>只在检测器里加了新 type</b> —— 打印明细与推送</p>
+<p>正文仍走 <code>else</code> 分支取 <code>a['segment_median']</code>。</p>
+
+<p><b>事故链(逐条实测证据)</b></p>
+<li>20:49:25 生产 <code>self_evolve --daily</code> 跑该步 → 扫描 1245 只、检出 1 只异常(DD) → 打印明细时</li>
+<p>   <code>KeyError: 'segment_median'</code> → 进程 <b>rc=1</b>(约定外; 设计上检出异常应 rc=3)。</p>
+<li><code>self_evolve.step()</code> 语义 = rc=3「告警触发, 链继续」/ rc≠0,3「阶段失败,立即停止」→</li>
+<p>   <b>20:49:42 整条盘后链中断</b>, 其后步骤(报表产物窗口/收尾推送等)全部跳过。</p>
+<li>推送在崩溃点之后 → <b>手机告警根本没发出</b>(<code>output/.scale_continuity_push_state</code> 停在</li>
+<p>   当日 05:27, 证明 20:49 那次没有推送; 20:49:43 那次 Bark 是链自身的失败告警)。</p>
+<li>同一根因在隔离 E2E 里<b>独立复现</b>: <code>staging/e2e_20260910_205523</code> 的</li>
+<p>   <code>self_evolve --daily(全链)</code> rc=1(220s), 报告结论 ❌ 1 项未过 —— 即该失败是<b>真实缺陷</b>,</p>
+<p>   不是 harness 问题(E2E 的价值正在于此)。</p>
+
+<p><b>修复</b></p>
+<li>单行描述抽成唯一来源 <code>_anomaly_line()</code>: 三种类型各一分支持 + <b>未知类型兜底 JSON 转储</b>,</li>
+<p>  <code>main()</code> 打印与 <code>push_alert()</code> 正文共用, 结构上不可能再 KeyError。</p>
+<li>DD 的 0.4725 之谜同期查清(见 <code>docs/metric-provenance-audit.md</code> A1): yfinance DD actions 记</li>
+<p>  <b>2019-06-03 Stock Split 0.4725</b>, <code>1/0.4725 = 2.116402</code> 与护栏因子逐位一致 → 面板该日之前</p>
+<p>  历史已复权(<b>正确</b>)、缓存 Close/AdjClose 未复权 → 属<b>正确的口径差, 不是污染</b>。</p>
+<li>据此加 <code>KNOWN_ENTITY_CHANGE</code>(DD / 坏段末日 ≤ 2019-06-01 / 因子 2.116402±1%): 明细照旧写进</li>
+<p>  <code>output/scale_continuity_status.json</code>(审计口径不丢)、<code>status="known"</code>、不推手机、不计 rc=3;</p>
+<p>  判据是 AND, 故<b>行为日之后的新污染照常红灯</b>(白名单不吞新事故)。数据一行未改。</p>
+<li>消费方同步: <code>verify_daily_health</code> 把 <code>known</code> 视为通过(只有 <code>warn</code> 才是问题);</li>
+<p>  <code>render_html._scale_guard</code> 新增 known 分支(绿 + 写明「已知公司行为遗留 N 只」)并补齐</p>
+<p>  <code>segment_scale</code> 类型标签(原先任何非整段类型都显示成「中段换刻度」)。</p>
+
+<p><b>验证</b></p>
+<li>护栏实跑: <code>ℹ 已知公司行为遗留 1 只(非事故, 不告警): DD 分段刻度 因子 2.116402 …</code> + <b>rc=0</b>;</li>
+<p>  DD 明细仍在 status JSON 的 <code>anomalies</code> 与 <code>known</code> 两处。</p>
+<li>相关用例 32 项通过, 其中 6 项为本事故回归(三类型 + 未知类型格式化不抛异常、</li>
+<p>  <code>main()</code> 段式异常必须 rc=3 而非崩溃、known-only 不告警但留档); 卡片 ok/known/warn/缺失</p>
+<p>  四态契约锁死(<code>tests/report/test_scale_guard_card.py</code>)。</p>
+
+<p><b>教训</b>(已写进 guard docstring + AGENTS.md): 新增检测器类型时<b>四个消费方必须同批改</b></p>
+<p>(单行描述 / 推送正文 / 日报卡片 / 健康度判定); 退出码是生产链的控制信号, 「约定外 rc」=</p>
+<p>生产中断, 不是无害的日志噪音。</p>
+
+<h2>2026-09-10 — 隔离 E2E 追出的三个次生问题: FROZEN 半替换洞 / E2E 假绿灯 / 测试写生产</h2>
+
+<p>前一条(刻度护栏崩溃)修完后重跑 <code>--full-chain</code> E2E, 链推进到 <code>watch.py</code> 才失败, 追根又牵出</p>
+<p>三个独立问题, 一并修掉:</p>
+
+<p><b>① FROZEN 闸门有洞: 被拒的重训仍然改写了生产 LGB 模型(高危)</b></p>
+<li>现象: staging 里 <code>models/lgb_20/40/60.txt</code> 的 mtime 落在 <code>retrain.py --force</code> 那一步, 且是</li>
+<p>  <b>26 特征</b> booster, 而 <code>models/config.json</code> 仍是 <b>33 特征</b> → <code>signals.py</code> 调 LGB worker 报</p>
+<p>  <code>features in data (33) != training data (26)</code> → 链中断。</p>
+<li>根因: <code>retrain.train_models</code>(Step 4)无条件给 LGB 子进程传 <code>--save-model models/</code>, 而</li>
+<p>  FROZEN/护栏检查只在 Step 6 的 <code>save_model</code> 里 → 打印「⛔ RETRAIN BLOCKED —— 未写盘」并 rc=3</p>
+<p>  的同时 <b>LGB 文件已写进生产</b>, 形成「MLP 旧 / LGB 新」半替换态(与 2026-09-08 违规重训事故</p>
+<p>  同型, 冻结期铁律被绕过)。</p>
+<li>影响面: 冻结期内任何 <code>retrain.py</code>(含控制台按钮 / <code>--force</code>)都可能把生产 ensemble 悄悄换成</li>
+<p>  新训练的 booster; 生产当前状态干净(lgb mtime 09-08、33 特征、与 config 自洽)。</p>
+<li>修复: main 在<b>训练之前</b>合成 <code>can_write = 护栏 AND 冻结闸门</code>; 不允许时 LGB 产物落临时目录</li>
+<p>  —— <code>train_models(lgb_save_dir=None)</code> 默认<b>不写生产</b>(fail-closed), 仅当 main 显式传生产</p>
+<p>  目录才落盘; <code>save_model(allow_write=can_write, gate_note=...)</code> 同步。</p>
+<li>回归: <code>tests/model/test_retrain_lgb_write_gate.py</code>(4 用例: 默认不写生产 / 显式才写 /</li>
+<p>  闸门异常 fail-closed / 冻结窗内拒绝)。</p>
+
+<p><b>② E2E 的 «FROZEN: models 未被改写» 是假绿灯(断言太弱)</b></p>
+<li>原实现 <code>sorted(p.name)</code> 只比<b>文件名</b>, 内容被换也判过 —— 上述半替换态因此一路放行。</li>
+<li>改为<b>逐文件 sha256</b> 对比 staging 与生产 <code>models/</code>, 失败信息列出不同的文件名。</li>
+<p>  这是「不要为了绿灯放宽断言」的反面案例: 断言必须强于被断言的对象。</p>
+
+<p><b>③ 三个测试写生产文件(污染 + 让 E2E 的隔离判定无法归因)</b></p>
+<li><code>tests/web/test_job_manager.py</code>: JobManager 日志写 <code>output/web_&lt;kind&gt;.log</code>, 用例名直接进</li>
+<p>  文件名 → 历次回归在生产 <code>output/</code> 堆了 *<i>1015 个 <code>web_test_</i>.log</code>**(尚未删, 见待办)。</p>
+<p>  修复: 模块级 <code>job_manager.LOG_DIR</code> 可注入 + 测试 autouse fixture 指到 tmp。</p>
+<li><code>tests/model/test_arena_cut.py</code>: 两个 blocked 分支用例没 patch <code>CUT_ALERT</code>, 守卫直接写生产</li>
+<p>  <code>data/cut_divergence_alert.json</code>。修复: autouse fixture 隔离 OUT/HIST/CUT_ALERT; 同时把</p>
+<p>  <code>model_arena</code> 的 <code>Path("output")</code> / <code>Path("data/...")</code> <b>相对路径</b>改为 ROOT 相对</p>
+<p>  (相对 cwd 的写盘目标本身就是隐患)。</p>
+<li><code>tests/report/test_render_fidelity.py</code>: 原样把 <code>render_html.OUT</code> 指向生产 output/ → 每次回归</li>
+<p>  重写生产 <code>output/daily_report.html</code>(本轮 E2E 的「生产文件零改写 ❌」正是它引起的误报,</p>
+<p>  不是 E2E 写穿)。修复: 渲染写 tmp(生产 output/ 以符号链接镜像作只读输入, 只排除渲染器的两个</p>
+<p>  写目标 daily_report.html / drawer_data.js), 断言不变。</p>
+<li>验证: 三个文件重跑后生产文件 mtime 均未变; 渲染保真仍是 3 passed + 1 已知红(快照未刷)。</li>
+
+<p><b>E2E 终验(<code>--full-chain</code>, 21:37 起, 上述修复之后)</b>: ✅ <b>全绿</b></p>
+<li><code>self_evolve --daily(全链)</code> <b>rc=0 / 1015s</b> 跑通 —— 修复前同一用例 rc=1(先撞刻度护栏崩溃,</li>
+<p>  修完护栏又在 <code>watch.py</code> 撞上 LGB 特征数不符)⇒ <b>两个 bug 都真实存在, 是 E2E 逐个抓出来的</b>;</p>
+<li><code>FROZEN: staging 内生产 models/ 未被改写</code> = 18 个文件与生产<b>逐文件 sha256 一致</b>(新断言);</li>
+<li><code>生产文件零改写 变更 0 个</code> + <code>生产无新增文件 新增 0 个</code>(本轮刻意不与其它生产任务并发, 判定有效);</li>
+<li><code>通知被完全隔离(staging 内无 ok=true 回执)</code> ✓ / <code>train_final 只写实验目录</code> ✓。</li>
+
+<p><b>全量回归</b>: <b>1036 passed / 1 failed</b>(唯一红 = 用户明确要求不动的 <code>test_render_fidelity</code></p>
+<p>快照); 语法门 368 脚本 + 9 JS 通过。回归后复核: 测试<b>不再写生产</b>(<code>output/web_test_*.log</code></p>
+<p>仍 1015 个且最新时间早于本轮; <code>data/cut_divergence_alert.json</code> 与 <code>output/daily_report.html</code></p>
+<p>mtime 未变)。</p>
+
+<p><b>副作用说明(未动数据)</b>: 生产 <code>data/cut_divergence_alert.json</code> 当前内容是<b>测试合成值</b></p>
+<p>(<code>rolling_rank 4/4/4</code>, 而写它的测试断言本身期望 <code>{}</code>), 时间戳 21:31。用真实</p>
+<p><code>output/arena_cut_stability.json</code>(09-09)只读复算守卫: 同样判 <code>hold</code>, 原因 = 该文件**缺</p>
+<p><code>top_models_by_cut</code> 键** → 走「不在任何滚动 top5」分支 ⇒ 结论一致, 故未删/未改写该文件。</p>
+
+<p><b>待办(破坏性动作待用户确认)</b>: ① 清理生产 <code>output/</code> 里 1015 个 <code>web_test_*.log</code>;</p>
+<p>② 查 <code>_cut_divergence_guard</code> 与 <code>arena_cut_stability.json</code> 的字段契约(缺键即 <code>hold</code> 是否预期)。</p>
+
+<h2>2026-09-10 — 用户决策落地: 清测试垃圾 / BTC 排除抽样 / 跳过路径可归因</h2>
+
+<p>三项(前两项为用户当场决定):</p>
+
+<li>*<i>删除生产 <code>output/</code> 里 1015 个 <code>web_test_</i>.log</code>**(2026-09-07~09-10 的 JobManager 竞态回归</li>
+<p>   产物, 220 KB): 已删, <code>ls</code> 归零。它们本就在 <code>.gitignore</code>(<code>output/*.log</code>)内 → git 零影响;</p>
+<p>   再犯已从源头堵住(<code>job_manager.LOG_DIR</code> 可注入, 测试 autouse 落 tmp)。</p>
+<li><b>BTC-USD 排除出收盘护栏抽样</b>: <code>signals.CLOSE_GUARD_24H_EXCLUDE = {"BTC-USD"}</code></li>
+<p>   (<code>_verify_close_prices</code> 的池与持仓两条路径都滤)。理由 = 口径冲突: 加密在 yfinance 侧</p>
+<p>   当天就有 bar, 缓存按美股日历写入 → 盘前/盘中必然「缺今天」→ 每次推「🚨 收盘价核验失败」</p>
+<p>   (2026-09-10 20:42 实测)。该标的只预测不执行。回归: <code>tests/signals/test_close_guard.py</code></p>
+<p>   +2 用例(普通池 / 持仓池都不得把它带进 yf.download)。</p>
+<li><b>「撞锁跳过」可归因插桩</b>(未决问题的诊断手段): 2026-09-10 生产 self_evolve 被跳过 6 次</li>
+<p>   (北京 20:08/20:10/20:12/20:18/21:06/21:07), 已排除用户手动、控制台任务日志</p>
+<p>   (<code>output/web_*.log</code> 同期无记录)、cron 调度器(<code>match()</code> 只在整点槽触发, 不匹配 08:08~09:07 ET)</p>
+<p>   —— 无法归因, 当时只留一行「跳过」。现每次跳过都记录并随告警推送</p>
+<p>   <code>argv / cwd / ppid / 父进程命令行</code>(<code>self_evolve._invoker_note()</code>), 下次即可定位。</p>
+<p>   回归: <code>tests/signals/test_self_evolve_lock.py</code> +2 用例(线索齐全 / 环境异常也不抛)。</p>
+
+<p><b>未决(待用户定)</b>: <code>_cut_divergence_guard</code> 的判定依赖 <code>output/arena_cut_stability.json</code> 的</p>
+<p><code>top_models_by_cut</code> 键, 而生产那份文件(09-09 08:35)是<b>旧版产出、缺该键</b> → 守卫恒走</p>
+<p>「不在任何滚动 top5」分支判 <code>hold</code>(控制台因此长期显示「暂缓切换」)。生产侧该键由</p>
+<p><code>arena_cut_stability.py:116</code> 写出 ⇒ 重跑该脚本即可让判定恢复有据; 本次未擅自重跑。</p>
 
 </main>
 </body>
