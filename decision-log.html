@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>决策记录 · deepltrading</title>
+<style>
+:root { --bg:#f5f6f8; --ink:#1a1d23; --muted:#6B7078; --accent:#b52b32; --line:#e4e7ec; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.75 -apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; }
+main { max-width:900px; margin:0 auto; padding:24px 18px 90px; }
+h1 { font-size:24px; border-bottom:3px solid var(--accent); padding-bottom:10px; }
+h2 { font-size:19px; margin-top:34px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+h3 { font-size:16px; margin-top:22px; }
+a { color:var(--accent); text-decoration:none; }
+a:hover { text-decoration:underline; }
+table { border-collapse:collapse; width:100%; margin:12px 0 18px; background:#fff; font-size:13px; display:block; overflow-x:auto; }
+th, td { border:1px solid var(--line); padding:6px 10px; text-align:left; }
+th { background:#fafbfc; font-weight:600; }
+code { background:#f0f1f3; border-radius:3px; padding:1px 5px; font:13px "SF Mono",Menlo,monospace; word-break:break-all; }
+pre { background:#1e2126; color:#e6e6e6; padding:14px; border-radius:8px; overflow-x:auto; }
+pre code { background:none; color:inherit; }
+blockquote { margin:10px 0; padding:6px 14px; border-left:3px solid var(--accent); background:#fdf6f6; color:#555; }
+hr { border:0; border-top:1px solid var(--line); margin:22px 0; }
+li { margin:3px 0; }
+.meta { font-size:12px; color:var(--muted); margin:6px 0 14px; }
+.back { display:inline-block; margin-bottom:8px; font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-09-10 18:18 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
+<h1>历史决策记录</h1>
+
+<p>本文件只记录实验结果和已否决方案，不代表当前生产配置。</p>
+
+<li>旧纯 LGB 排名：历史对照；当前生产使用 <code>ens_60</code> rank-average。</li>
+<li>旧 <code>DD8 + VT18</code>：历史口径；当前生产使用 V2 <code>DD×IC</code> 暴露。</li>
+<li>ATR 个股止损、Rank deterioration exit、威科夫默认过滤：经双窗口/滚动复核后不是默认生产规则。</li>
+<li>重训模型不得回填旧 OOS 面板；这会把验证变成样本内。</li>
+
+<h2>2026-09-08 — FROZEN 冻结 vs 退化恢复链裁决(违规先例回滚)</h2>
+
+<p><b>背景</b>: 09-08 凌晨直接跑 <code>src/retrain.py</code> 重训生产模型(触发 = 60D IC 低值 14 天),</p>
+<p>未达 FROZEN 例外阈值; 且进程在 <code>torch.save(model.pt)</code> 后被中断, 留下 model.pt 新/scaler</p>
+<p>旧 的半替换态(scaler/config 未落盘)。</p>
+
+<p><b>裁决</b>: 退化恢复链的「重训」动作<b>受 2027-01-01 冻结约束</b>——冻结期内恢复链只允许</p>
+<p>「回滚」(models_prev/ → models/, 不产生新权重); 重训唯一路径 = <b>IC&lt;0 连续 30 交易日</b></p>
+<p>紧急审查例外, 由 <code>src/frozen_forward_tracker.py</code> 自动判定(写</p>
+<p><code>data/emergency_review_state.json</code> + rc=3 推送), 审查批准(本文件记录)后才允许 retrain.py。</p>
+
+<p><b>处置</b>: ① 已回滚至冻结 8/26 生产模型(backup/model_20260908_070719_<i> + models_prev/lgb_</i>,</p>
+<p>哈希逐文件校验一致); ② retrain.py/lgbm_worker.py 落盘改为原子写(临时文件+os.replace),</p>
+<p>防半替换态再发; ③ 修复 retrain.py <code>--validate-only</code> 特征集错位(按 config 33 特征加载数据)</p>
+<p>与 device 对齐(权重 to DEVICE); ④ 修复 load_and_split_data 行切分导致的样本重叠</p>
+<p>(改按日期切分); ⑤ 修复 <code>--validate-only</code> 缺 joblib import。</p>
+
+<p><b>当前冻结段 forward 状态</b>(2026-09-08, 9 个成熟交易日): archive 口径逐日 IC 均值</p>
+<p><b>-0.0858</b>, 连续负 9 天, 未达 30 天阈值 — 继续观察, 标签全熟 ≈ 2026-11-2x。</p>
+
+<hr>
+
+<p>任何新模型、特征或风控规则，必须经过成本、成交时点、walk-forward、打乱标签和近期 OOS 检验，并在此记录日期、窗口、结果和最终状态。</p>
+
+<h2>2026-09-09 — Cat Promotion 过拟合审计:冻结点 + 历史设施盘点</h2>
+
+<p><b>背景</b>: cat 通过性能 Promotion Gate(竞技场双窗口 / 13v / V2 同引擎 / MDD),</p>
+<p>但未通过 selection-bias Gate。大量候选搜索(cat/ens_trio/ens_cat/ens × K10-50 ×</p>
+<p>双窗口 × 13v × V2)后选出的 cat,其优势必须经多重测试惩罚。</p>
+
+<p><b>历史设施盘点(全部不继承给 cat)</b>:</p>
+<li>SPA/RC(<code>output/spa.md</code>, 2026-08-22): 对象=旧 ens 生产, H0=Sharpe=0(非 Δ), 且自注「完整 max-statistic SPA 未完成」。</li>
+<li>CPCV(<code>output/cpcv.json</code>): <code>mlp_only=true</code>, k=50/ATR1.5 旧协议, 非 ens 非 cat。</li>
+<li>CPCV full(<code>cpcv_full.py</code>): <code>data/cpcv_full.json</code> 不存在, 从未跑完。</li>
+<li>Purged WF(<code>purged_walkforward.py</code>, 2026-08-21): 6 折全在 2026-05-19 前, 对象=ens 同构, 不含 cat。</li>
+<li>Block bootstrap + DSR(<code>champion_eval_report.py</code>): Set A vs Set B 风控对决, 非模型对决。</li>
+<li>fold6 冻结窗(<code>cat_fold6_extra.parquet</code> 2026-09-09 07:54 生成): 预测不重训, 但生成于 cat 夺冠/13v/TopK 分析<b>之后</b>, 且窗落在竞技场评估窗内 → <b>不算干净的 post-selection OOS</b>。</li>
+
+<p><b>冻结点(本日起生效): 2026-09-04</b>。</p>
+<li>冻结内容: cat 超参(RMSE/depth7/lr0.05/l2_leaf8/seed1/早停100)、ens 协议(mlp+lgb 逐日秩平均)、Top30/60D 重平衡/20bps、V2 协议(dd_exp×ic_exp)、引擎 champion_stop.simulate。</li>
+<li>09-05 之后新增的真实交易日 = 唯一干净的 post-selection OOS(标签全熟 ≈ 2026-12 中旬)。</li>
+<li>冻结期间任何调整 cat/ens/V2 参数的决策,必须重新走此审计链。</li>
+
+<p><b>执行链(按序)</b>: ① 冻结点已立(本记录) ② Purged WF cat 版(已扩展 <code>--with-cat</code>, 折1 验证通过: cat IC +0.0461 vs ens +0.0437, ΔSharpe -1.70 单折; 全量 6 折待跑) ③ CPCV(cat vs ens, 扩展现有 12 块框架) ④ SPA(Δ(cat−ens), 候选空间=13 变体×K10-50×窗口口径, White 2000 block bootstrap + max-statistic) ⑤ 盲测窗自动累积追踪。</p>
+
+<p><b>2026-09-09 Purged WF cat 版全量结果(6 折, purge 60 + embargo 60, 测试窗全在 2026-05-19 冻结点前)</b>:</p>
+<li>gated(ATR1.5+DD8 legacy)口径: ens Sharpe med 3.58 / P(&gt;0) 100%; cat med 2.27 / P(&gt;0) 83%; <b>Δ(cat−ens) med -1.15, P(Δ&gt;0) 17%</b></li>
+<li><b>裸口径(port_stats, 与竞技场可比)</b>: ens med 3.69 vs cat med 3.11; <b>Δ裸 med -0.33, P(Δ&gt;0) 33%, 最差 -1.41</b></li>
+<li>逐折裸 Δ: -1.41 / -0.26 / +0.12 / -0.41 / +0.46 / -0.91</li>
+<li>IC 层: cat med +0.096 vs ens +0.122; cat 仅 fold4(2024末)IC <b>-0.140(t=-12.7)崩坏</b></li>
+<li><b>裁决</b>: legacy 风控偏差分离后(gated -1.15 → bare -0.33)cat 仍中位数落后; 竞技场/13v 的 cat 优势在 purged OOS 下<b>未复现</b> → <b>Purged WF 未通过</b>, cat 优势时期依赖(仅 2025 年中 fold5 大胜), 存在 selection bias 形态。<b>换冠决策挂起</b>, 待 CPCV + SPA(Δ) 与盲测窗。</li>
+
+<h2>2026-09-10 — CPCV 裸口径(cat)完成 + 双轮差异根因审计</h2>
+
+<p><b>权威产物</b>: <code>output/cpcv.json</code>(2026-09-10 02:12 写入, 引擎 <code>engine=bare</code>, <code>with_cat=true</code>, <code>mlp_only=false</code>, k=30, N=12/P=3 → 220 组合, purge60+embargo60)。promotion_gates ③ CPCV 关由 info → <b>pass</b>。</p>
+
+<p><b>裸口径结果(02:12 版)</b>: IC med <b>+0.0626</b>(P(&gt;0) 95.5%, P(&gt;0.05) 60.5%) | Sharpe med <b>1.147</b>(P(&gt;0) 100%, 最差路径 +0.504) | MaxDD med -34.5%(worst -57.8%) | PF med 1.745。</p>
+<p><b>cat vs ens Δ</b>: ΔIC med <b>+0.0106</b>(P(Δ&gt;0) 80.9%) | ΔSharpe med <b>+0.016</b>(P(Δ&gt;0) 53.2%, q05 -0.238) | ens Sharpe 1.147 vs cat 1.131。</p>
+
+<p><b>双轮数字差异根因(21:49 日志 vs 02:12 json)</b>: 不是引擎切换, 也不是模型随机性——<b>是代码版本不同</b>。21:49 轮(<code>output/cpcv_cat_run.log</code>)运行于提交 <b>11cfd28</b>(2026-09-09 22:13, CPCV 换裸引擎+cat 分支)之前的<b>中间工作树代码</b>(cat 分支当日开发、当晚才整体提交)。证据链: ① <code>data/dataset.parquet</code> 两轮同一文件(mtime 09-09 17:41, 早于两轮) ② MLP(model.py seed=0)/LGBM(seed=42, worker 含 feature_fraction/bagging)/CatBoost(random_seed=1, thread_count=4) 三个训练组件均<b>实测位级确定</b>(同进程+跨进程) ③ 11cfd28 diff 只改 <code>_backtest</code> 引擎与 cat 分支, 未动 ens 训练路径 ④ 同代码+同数据 ⇒ 块 IC 必逐位相同, 而两轮 12 块 IC 全部不同(如 block0 -0.0089 vs +0.0014) ⇒ 只能是训练路径代码版本差异。<b>21:49 轮的 Sharpe/MDD/Δ 数字作废, 勿引用</b>。</p>
+
+<p><b>裁决影响</b>: CPCV 裸口径下 cat 仅在 <b>IC 层一致占优</b>(ΔIC +0.011, P 81%), <b>Sharpe 层接近持平</b>(P(Δ&gt;0) 53%), 与 Purged WF 的 cat 劣势(bare Δ -0.33)方向相反——cat 优势时期依赖担忧延续, <b>不构成换冠证据</b>。换冠仍 BLOCKED(唯一 fail = ② Purged WF)。<b>可复现性</b>: 提交后代码 + 当前 dataset 重跑 <code>python src/cpcv.py --with-cat</code> 应逐位复现 02:12 数字(组件确定性已实测)。</p>
+
+<h2>2026-09-10 02:50 — CPCV 双轮差异根因修正:数据刷新(非代码版本)+ 重放逐位复现实证</h2>
+
+<p><b>修正 3665ddf 的根因判断</b>: 双轮块 IC 差异的直接原因是 <b>dataset 刷新</b>, 不是代码版本。证据:</p>
+<li>run A(21:49)加载的是 <b>17:41 重建之前</b>的 dataset(2484 交易日, 截止 09-04);</li>
+<li>17:41 <code>data/dataset.parquet</code> 被重建(新增 09-08 交易日 → 2485 天, +1227 行);</li>
+<li>run B(02:12)与本次重放都读重建后版本(2485 天, 截止 09-08);</li>
+<li>mtime 只证明最后写入时刻, 不能证明 run A 读取时的内容 —— 此前「数据同一文件」证据链有缺陷。</li>
+
+<p>逐块影响(与数据解释吻合):</p>
+<li>块 0: 训练集 run A 2,451,456 vs 重建后 2,452,673(+1217 行 = 09-08);测试窗两轮相同(196,821 行, 2016-10-18→2017-08-15)⇒ 块 IC 差异来自训练数据变化;</li>
+<li>块 11: 训练/验证完全一致(2,385,097 / 300,129, 训练集在 2025-05-16 前、不含 09-08),仅测试窗多一天(252,107→253,334)⇒ run A +0.1020 vs run B 0.10177 几乎一致。</li>
+<li>引擎切换(gated→bare)贡献于 Sharpe/MDD 差异, 不影响块 IC(与 11cfd28 diff 结论一致)。</li>
+
+<p><b>可复现性端到端实证(02:50)</b>: 复用 cpcv.py 自身函数重放 block 0(同代码=11cfd28, 同数据=当前 2485 天版):</p>
+<li><code>REPLAY block0 IC = 0.0013571218557034436 == output/cpcv.json 存储值</code>, <b>逐位一致</b>;</li>
+<li>LGBM best_val_ic(0.6563/0.6857/0.7091)与 run A 日志(0.6594/0.6824/0.7040)不同 → 印证 run A 用的是旧数据;</li>
+<li><b>block 11 重放(03:07)同样逐位一致</b>: 0.10176583878119091 == json 存储值。</li>
+<li>block 11 交叉印证: MLP val_ic=0.380029、LGBM best_val_ic=0.652354/0.680436/0.693406 与 run A 日志<b>完全一致</b> ⇒ block 11 训练集两轮相同(不含 09-08)⇒ 证明 run A/B 的 ens 训练路径代码+种子<b>完全相同</b>, 差异只来自数据刷新, 代码版本假设对训练路径被证伪。</li>
+
+<p><b>结论</b>: 同代码+同数据 ⇒ 02:12 裸口径结果可<b>逐位复现</b>(block 0/11 双块实证), <b>无需第三次全量重跑</b>; 02:12 数字权威, 21:49 轮作废(不变)。</p>
+
+<h2>2026-09-10 — gated 对 cat 拖累拆解验证:持仓重叠 + 止损/门控量化(cat_gate_holdings_audit.py)</h2>
+
+<p><b>背景</b>: 上一条拆解把「gated(ATR×1.5+DD8)对 cat 系统性拖累」归因为 ① DD8 门控路径依赖=主因 / ② 止损空仓踏空=次因 / ③ 换手=放大器, 其中 ④「持仓重叠度低、cat 独有持仓更激进→更易触发止损」是<b>推断</b>。本条用现成研究面板只读验证(不重训, 10s 级)。</p>
+
+<p><b>数据源</b>: <code>output/model_family_oos.parquet</code>(5 折 expanding walk-forward, 2021-08-02→2026-05-29, 1212 交易日, ens_60/cat_60 同窗)+ panel Close + dataset atr_pct_14。工具 <code>src/cat_gate_holdings_audit.py</code>(新增, 只读), 结果 <code>output/ens_cat_overlap_audit.json</code>。</p>
+
+<p><b>① Top30 Jaccard 重叠度(逐日, 与 monthly_attribution top30 同口径)</b>:</p>
+<li>overall <b>0.3877</b>(逐日均值 0.3974 / 中位 0.3953 / 10p 0.25 / 90p 0.54)</li>
+<li>逐年(逐日年均, 非全年集合口径): 2021 0.50 / 2022 0.47 / 2023 0.36 / 2024 0.41 / 2025 0.33 / 2026 0.33 —— <b>重叠度随时间下降</b>, 2023 后稳定 ~0.33-0.41</li>
+<li>60d 滚动首→末 0.59→0.38(min 0.25 / max 0.59)</li>
+<li>→ ④ 的「重叠中等偏低」前提成立(约 2/5 共同持仓), 且 cat 独有持仓占比逐年增大。</li>
+
+<p><b>③ 三类持仓 ATR 止损命中率(近似: 信号日 Top30 建仓, entry=次日收盘, stop=entry×(1−1.5×ATR) 锚定, 60 日内收盘破位即命中)</b>:</p>
+<table>
+<tr><th>持仓类别</th><th>仓位数</th><th>命中</th><th>命中率</th></tr>
+<tr><td>common(共同)</td><td>359</td><td>221</td><td><b>61.6%</b></td></tr>
+<tr><td>ens_only</td><td>271</td><td>158</td><td>58.3%</td></tr>
+<tr><td>cat_only</td><td>271</td><td>158</td><td>58.3%</td></tr>
+<li>ens_only/cat_only 每期大小必然相等(30−|common|); 累计命中 158=158 系巧合(逐期核验不同: 2021-08-02 期 6/10 vs 9/10, 2022-07-15 期 1/11 vs 6/11)。</li>
+<li><b>关键: cat 独有持仓止损命中率并不高于 ens 独有(58.3% vs 58.3%), 共同持仓反而最高(61.6%)</b> → ④ 的「cat 独有更易触发止损」<b>被证伪</b>; 反而是两模型共识的高分股波动更大、更易破位。</li>
+</table>
+
+<p><b>② gated 引擎量化(cs.simulate k30 / ATR1.5 / DD8 / replace=False, 与 purged_wf 同参)</b>:</p>
+<table>
+<tr><td>指标</td><td>ens_60</td><td>cat_60</td><td>Δ(cat−ens)</td></tr>
+<tr><td>gated Sharpe</td><td>1.48</td><td>1.305</td><td><b>−0.175</b></td></tr>
+<tr><td>bare Sharpe</td><td>1.476</td><td>1.586</td><td><b>+0.110</b>(裸口径 cat 反略优)</td></tr>
+<tr><td>gated MDD</td><td>−31.8%</td><td>−38.2%</td><td>更深</td></tr>
+<tr><td>bare MDD</td><td>−55.6%</td><td>−53.3%</td><td>更浅</td></tr>
+<tr><td>stops 次数</td><td>381</td><td>382</td><td>~相同</td></tr>
+<tr><td>gate_dates(门控生效天数)</td><td>591</td><td>674</td><td><b>+83</b></td></tr>
+<tr><td>gated_frac(暴露&lt;1 时间占比)</td><td>59.7%</td><td>64.7%</td><td><b>+5.0pp</b></td></tr>
+<tr><td>turnover_yr</td><td>7.01</td><td>7.01</td><td>相同</td></tr>
+<tr><td>trade_n</td><td>610</td><td>612</td><td>相同</td></tr>
+<tr><td>stop_rebound20(止损后 20 日反弹)</td><td>7.02%</td><td>8.78%</td><td><b>+1.76pp</b></td></tr>
+</table>
+
+<p><b>评估(支持/修正 ①②③④)</b>:</p>
+<li><b>① DD8 门控路径依赖=主因 → 支持, 升级为结论</b>: 同一面板同一批预测, 只换引擎 gated→bare, cat 相对 ens 从 <b>+0.11(优)翻转为 −0.175(差), 翻转幅度 0.29</b> —— 这是比 purged_wf 间接比较(gated −1.15 vs bare −0.33)更干净的引擎效应量化。cat 门控天数 +83、暴露&lt;1 时间占比 +5.0pp、MDD 改善远小于 ens(−15.1pp vs −23.8pp)。</li>
+<li><b>② 止损空仓踏空=次因 → 部分修正</b>: stops 次数几乎相同(381 vs 382),「cat 触发更频繁」<b>不成立</b>; 但 cat 被止损后 20 日反弹更大(8.78% vs 7.02%)→ 次因应改写为「<b>同频率止损下, cat 的踏空成本更高(被斩的票反弹更大)</b>」。</li>
+<li><b>③ 换手=放大器 → 推翻</b>: turnover 完全相同(7.01x/yr)、trade_n 相同(610 vs 612)——换手/成本不是解释变量。</li>
+<li><b>④ 持仓重叠推断 → 部分推翻</b>: 「重叠低且逐年下降」成立(0.39),「独有持仓更易止损」被证伪(命中率 cat_only == ens_only == 58.3%, common 最高 61.6%)。独有持仓的差异不在止损频率, 而在止损后的反弹幅度(踏空成本)。</li>
+
+<p><b>综合裁决</b>: gated 拖累 cat 的主因 = <b>DD8 门控</b>(门控天数/占比/同面板引擎翻转 0.29), 次因 = <b>止损后的踏空成本</b>(反弹更大), 换手与止损触发频率非解释变量, 持仓「低重叠」成立但「更易止损」证伪。<b>裸口径(port_stats)是 cat 对拼的公平引擎</b> —— CPCV/竞技场用 bare 的决策得到进一步支持(同面板 gated 会把 cat 从 +0.11 压到 −0.175)。</p>
+
+<p><b>局限</b>: 本验证用 model_family_oos(5 折 expanding), 非 purged_wf 的 6 折固定窗; 绝对 Sharpe 与 purged_wf 不可直接比较(面板不同; 且本面板裸口径 cat 略优与 purged_wf 裸口径 cat 略差方向相反, 再次印证时期依赖), 但机制方向(门控拖累/踏空/换手无关)在两类面板间一致可移植。stops 近似 n/h 统计首轮输出字段错位已修正; ens_only/cat_only 累计命中相等系巧合(逐期不同), 不改变「两类独有持仓命中率相等」结论。</p>
+
+<h2>2026-09-10 — gated 拖累审计对账:近似止损检测 vs 引擎逐仓核验(9eecc2c 复核)</h2>
+
+<p><b>背景</b>: 9eecc2c 的近似止损检测(信号日 Top30 建仓, entry=次日收盘, stop=entry×(1−1.5×ATR), 60 日内收盘破位即命中)是独立实现, 未与引擎逐仓对账。本条用 <code>cs.simulate(return_trades=True)</code> 暴露的 trade_log(逐笔 entry/exit/price/reason)逐仓核验。工具 <code>src/cat_gate_audit_reconcile.py</code>(新增, 只读), 结果 <code>output/cat_gate_audit_reconcile.json</code>。</p>
+
+<p><b>① 逐仓比对(近似 vs 引擎 atr_stop 交易, 按 entry 重平衡日分组)</b>:</p>
+<table>
+<tr><td>信号</td><td>n</td><td>TP</td><td>FP</td><td>FN</td><td>TN</td><td>误判率</td></tr>
+<tr><td>ens_60</td><td>630</td><td>379</td><td>0</td><td>2</td><td>249</td><td><b>0.32%</b></td></tr>
+<tr><td>cat_60</td><td>630</td><td>376</td><td>1</td><td>5</td><td>248</td><td><b>0.95%</b></td></tr>
+<li>全部 FN 为 <code>approx_no_hit</code>(近似漏检), 机制 = <b>引擎在重平衡日当天就用「次日 entry 的止损价」对比当日收盘</b>(<code>close[pos_of[s][i]] &lt;= entry×(1−1.5×ATR)</code>), 近似检测从次日开始 → 漏掉该日。幅度 &lt;1%, 方向为近似<b>略微低估</b>止损命中。</li>
+<li>FP 仅 1 例(cat, 2026-05-13 面板末端重平衡日): 数据末端近似用 searchsorted 到实际行、引擎 pos_of 越界守卫排除, 边界细节。</li>
+</table>
+
+<p><b>② stops 次数</b>: 引擎 stops 381(ens)/382(cat) vs 近似 ens 视角命中 379/377 —— Δ−2/−5 恰等于 FN 数, <b>「同频率止损」成立</b>(两信号引擎侧仅差 1 次)。</p>
+
+<p><b>③ 止损后 20 日反弹(逐笔重建)</b>: 引擎 <code>stop_rebound_20_mean</code> 0.070229(ens)/0.087834(cat) vs 从 trade_log 重建 0.070229/0.087834 —— <b>逐位一致</b>(n 371/369 与引擎 stop_rebounds_n 也对上; 重建用引擎同一窗口序列 m, 非完整 panel)。<b>「cat 踏空成本更高(+1.76pp)」确认成立</b>。</p>
+
+<p><b>④ 门控天数 Δ+132/+110 是引擎语义, 非口径错误</b>: <code>gate_dates_n</code>(591/674) = 「前一交易日净值回撤 ≤ −8%」的天数(与引擎自身 dd 序列逐日自洽, ens 591 == 前一 dd≤−8% 计数); exp 反推的 723/784 更大, 差异 = <b>门控恢复滞后</b>: 回撤收窄至 (−8%, 0) 且未创新高时, exposure 保持 0.5 不恢复(dd 序列证实, ens 滞后保持日 431 中落在门控周期内的 132 天)。<b>两种口径下 cat 都更高</b>(591→674, 723→784), ①「DD8 门控为主因」结论不变。</p>
+
+<p><b>结论</b>: 9eecc2c 三个核心数字全部成立 —— ① 近似误判率 &lt;1%(唯一偏差: 漏检重平衡日当天止损, 方向低估, 不影响共同 61.6% vs 独有 58.3% 的 3.3pp 差距); ② 引擎同频率止损(381 vs 382); ③ 反弹逐位一致(0.0702 vs 0.0878)。<b>无需修正任何已提交数字</b>; 新增局限: 近似检测漏检「重平衡日当天止损」(引擎语义: 当日收盘 vs 次日 entry 止损价), 以及门控天数的两种口径(触发日 vs 实际降半运行日, 差 = 恢复滞后)。</p>
+
+<h2>2026-09-10 — 模型泛化裁决架构固化:bare 为正式裁决口径, 各设施角色分工</h2>
+
+<p><b>决策</b>: 把裸口径(bare, port_stats)正式定为模型泛化裁决口径; legacy gated(ATR1.5+DD8)降级为机制诊断; 各验证设施按角色分工, 不做交叉替代:</p>
+
+<table>
+<tr><td>设施</td><td>角色</td><td>说明</td></tr>
+<tr><td>legacy gated</td><td><b>机制诊断</b></td><td>只回答「风控层与候选的交互」诊断问题(DD8 门控路径依赖 / 止损踏空 / 恢复滞后), <b>不作泛化裁决</b>。实证: 同面板同预测只换引擎, cat 相对 ens 从裸 +0.11 翻转为 gated −0.175(9eecc2c/b01e663 审计), gated 会系统性压低真实模型能力</td></tr>
+<tr><td>bare(port_stats)</td><td><b>模型能力比较(正式裁决)</b></td><td>promotion_gates ② Purged WF Δ(bare) 必须为正; CPCV/竞技场/13v 同引擎, 各候选公平可比</td></tr>
+<tr><td>CPCV</td><td><b>跨路径 robustness</b></td><td>12 块 × 220 组合覆盖全历史(2016→2026), 检验结论是否依赖特定测试窗划分</td></tr>
+<tr><td>SPA</td><td><b>selection bias</b></td><td>候选经大量搜索后需多重测试惩罚(Δ(cat−ens) 版待跑, 现状 H0=Sharpe=0 非 Δ)</td></tr>
+<tr><td>Frozen OOS</td><td><b>最终现实检验</b></td><td>冻结点(2026-09-04)后的真实新数据盲测窗, 标签全熟(≈2026-12 中旬)前不判色; 优先级最高, 任何历史回测口径不可替代</td></tr>
+</table>
+
+<p><b>动机</b>: 2026-09-09/10 审计链(legacy 风控偏差分离 → CPCV/Purged WF 双轮对账 → 持仓重叠/止损/门控逐仓核验)证明 gated 引擎本身对 cat 存在系统性偏差, 若仍以 gated 作为换冠依据会把机制交互噪音混入模型能力判断。本固化使每条证据链只有一个职责、裁决口径唯一。</p>
+
+<p><b>落地</b>: <code>src/promotion_gates.py</code> docstring + ②③④ 注释、<code>src/purged_walkforward.py</code> docstring、<code>docs/production-conventions.md</code> 新增「模型泛化裁决架构」章节。行为不变: ② 本就是 bare 口径(<code>summary.cat.bare.delta_sharpe</code>), 本决策将其正式化为唯一裁决口径并明确 gated 禁用场景。</p>
+
+<h2>2026-09-10 — cat 研究结论定稿(换冠审计收尾, 与逐仓 reconciliation 合并)</h2>
+
+<p><b>定稿结论(用户定稿, 2026-09-10)</b>: cat 并非没有 alpha。CPCV 显示其 IC 相对 ens 具有一定一致性优势; 但该优势在严格时间前向的 Purged WF 中未稳定转化为组合收益优势。与此同时, legacy ATR/DD 风控与 cat 存在明显不利交互, 使 gated 表现进一步恶化; 该交互主要来自<b>更高的门控暴露损失</b>和<b>止损后的反弹机会成本</b>, 而非止损频率或换手差异。 —— 这句话把<b>模型本身的问题</b>与<b>风险引擎的问题</b>彻底分离。</p>
+
+<p><b>当前最终状态(不变)</b>:</p>
+<li><b>ENS = Champion</b></li>
+<li><b>CAT = Strong Challenger</b></li>
+<li><b>Promotion = BLOCKED</b>(唯一必过 fail = ② Purged WF: 裸口径 Δ(cat−ens) med −0.33 ≤ 0)</li>
+
+<p><b>后续路径(剩下真正值得做的)</b>: SPA(Δ(cat−ens) 多重测试)→ Frozen OOS 盲测窗(2026-09-04 冻结点后真实新数据, 标签全熟 ≈ 2026-12 中旬)→ <b>最终裁决</b>。在此之前不重启换冠讨论。</p>
+
+<p><b>逐仓 reconciliation 收尾声明(b01e663 复核)</b>: 不再扩大战线。FN 是否集中于共同/独有持仓可作为 minor follow-up, 但在整体误判率 &lt;1%(ens 0.32% / cat 0.95%)、且核心 3 个引擎数字(stops 381/382、反弹 0.070229/0.087834、门控天数)已逐仓重建一致的情况下, <b>它不是当前换冠决策的阻塞项</b>。</p>
+
+<h2>2026-09-10 — SPA + Frozen OOS 自动裁决器 + gated 引用面审计(补全裁决架构后续路径)</h2>
+
+<p><b>背景</b>: 换冠 BLOCKED(唯一 fail = Purged WF bare), 定稿后剩余路径 = SPA → Frozen OOS → 最终裁决。本次补齐三件设施:</p>
+
+<p><b>① Δ(cat−ens) SPA(src/spa_delta.py, 新)</b>: 候选空间 = 5 信号 × K{10,20,30,40,50} × 窗口{全窗, 2024+, 2025+} = 75 个 Δ(cat−ens) 日收益序列, White 2000 block bootstrap + max-statistic。结果: cat 单候选 t=0.61 (p=0.26), max-statistic p=0.33, cat 在 75 代理候选中排第 26 — <b>Δ(cat−ens) 无显著优势</b>, 与定稿结论一致(CPCV 的 IC 层优势不足以支撑换冠)。诚实标注: 13 变体只有汇总指标无日收益存档, 候选矩阵为 model_family_oos 5 信号的代理构造; 若未来有变体日收益存档可扩到真实 13 变体候选空间。</p>
+
+<p><b>② Frozen OOS 自动裁决器(src/frozen_oos_arbiter.py, 新)</b>: 冻结点(2026-09-04)后真实新数据, 标签全熟(≈2026-12 中旬)后自动输出 cat vs ens 对比与判色建议(双指标: IC + 裸 Sharpe)。已挂入周链(4a2a1b, frozen_forward_tracker 之后), 失败只告警不阻断。当前如实降级: archive 无 cat_60 列 → waiting_cat_data(未来信号管线接入 cat 盲测窗预测即自动生效), 标签成熟 0/3。判色仅为建议, 换冠仍需 promotion_gates 全链 + 人工批准。</p>
+
+<p><b>③ gated 引用面审计</b>: 盘点全仓库展示/引用 gated(ATR×1.5+DD8)数字的活跃位置 — model_arena(已标 rc_state 历史诊断)、champion_report(已标弃用)、purged_walkforward(已标口径角色)、promotion_gates(② bare 裁决)均合规; 唯一未标注的活跃引用是 <b>production_validation.py 的旧 CPCV 行</b>, 已加注「旧 mlp-only 协议 k=50/ATR1.5 gated 口径, 不继承给 cat 候选; 当前 CPCV 见 output/cpcv.json engine=bare」。引用规范写入 production-conventions.md(gated 数字不得用于换冠论证)。web 的 atr_mult 为交互参数(用户主动选)不计入; output 历史快照不追溯改写。</p>
+
+<h2>2026-09-10 — cat 盲测窗接入完成: 冻结模型 + 每日独立存档 + 裁决器升级</h2>
+
+<p><b>动机</b>(用户 2026-09-10): 审计链只剩 Frozen OOS 未闭环(⏳), 此前裁决器停在 waiting_cat_data——等 12 月才发现没 cat 数据是不可接受的工程缺口。补齐最小链: cat_60 → archive → Frozen evaluator, 不重构 signal_archive/promotion_gates/训练逻辑。</p>
+
+<p><b>四原则落地</b>:</p>
+<li><b>独立保存</b>: 新 data/cat_signal_archive.parquet(symbol/Date/cat_raw_60/cat_60 + 身份列), 不改 signal_archive 的 ens 语义; 按 prediction_date+symbol 可完整恢复当日 cat Top30。</li>
+<li><b>绝不回填</b>: 脚本只追加当日(最新 panel 交易日), 历史空洞永久缺失; <b>09-04~09-08 的 cat 预测当时未生成, 永久缺失</b>——盲测窗 cat 侧实际起点 = 2026-09-09(首个真实预测日), 这是 blind 的代价, 不接受未来模型回算。错过一天=永久缺失一天。</li>
+<li><b>写入与预测解耦</b>: 每日链 watch/signals 照常出 ens; cat_blind_archive.py 只读 panel + 冻结模型追加; 裁决器只读 archive, 绝不临时调模型回填。</li>
+<li><b>身份列 + 守卫</b>: 每行 model_version/config_hash/prediction_timestamp/feature_cutoff; 冻结模型文件 sha256 守卫——被替换/篡改 → rc=2 拒绝追加并推手机(已实测篡改拒绝、恢复后正常)。</li>
+
+<p><b>冻结模型</b>(models/cat_frozen.cbm + cat_frozen_meta.json): CatBoost RMSE/depth7/lr0.05/l2_leaf8/seed1/早停100, 与 purged_wf/cpcv/arena 的 cat 分支同构; 特征截止 2026-09-04(冻结点), 训练 2,474,518 行(2016-10-18~2025-09-03) + 验证 235,628 行(2025-09-04~2026-06-11, 与训练严格不相交), best_iter=21。冻结后绝不重训——12 月判色时若 cat 曾 retrain/replacement, 身份列可证明盲测窗用的是 09-04 冻结版本。</p>
+
+<p><b>裁决器升级</b>(frozen_oos_arbiter.py): 状态机 waiting_cat_data → <b>WAITING_LABEL_MATURITY</b>(双轨已接入、实验锁定、等标签成熟, 语义≠管线未就绪) → judged。输出双轨成熟度(ENS 预测 3 日成熟 0/3; CAT 预测 1 日成熟 0/1)+ vintage 单一性核验。判色规则不变(IC+裸 Sharpe 双胜才建议升级, 仅建议不自动换冠)。</p>
+
+<p><b>每日链挂载</b>(self_evolve.py 盘后, signal_archive --eval 之后): cat_blind_archive.py 失败只告警不阻断日报链, 但 rc=2 必须推手机(错过一天永久缺失)。</p>
+
+<p><b>当前状态</b>: ENS=Champion / CAT=Strong Challenger / Promotion=BLOCKED 不变; 盲测窗 cat 侧自 2026-09-09 起逐日累积, ≈2026-12 中旬标签全熟后由周链 4a2a1b 自动判色。</p>
+
+<h2>2026-09-10 — Frozen OOS 裁决器终点路径合成预演(13 用例回归)</h2>
+
+<p><b>动机</b>: 盲测窗 12 月才成熟, 不能等那时才发现状态机有问题。用合成数据预演「标签成熟 → cat vs ens 对比 → 判色输出」全程, 验证终点路径在 12 月前确实可用。</p>
+
+<p><b>最小缝隙</b>(非重构): frozen_oos_arbiter 数据源参数化——<code>--ens-archive/--cat-archive/--panel/--state</code>(默认仍指向生产路径, 不带参行为不变), <code>main(argv)</code> 可注入。合成预演/测试全部走 /tmp + tmp_path, <b>绝不触碰真实 data/cat_signal_archive.parquet、真实标签与冻结模型</b>。</p>
+
+<p><b>合成数据设计</b>(tests/model/test_frozen_oos_arbiter.py, 13 用例全部通过, ~6s): 40 只合成标的 × 持久 alpha + 每日噪声面板(覆盖盲测窗 + 75 个未来日供 port_stats 60 日持有期), ens archive 09-04 起 45 日 / cat archive 09-09 起 40 日(真实错位), 分数 = alpha×10 + 噪声(cat 噪声更小 → 判色路径可区分), 成熟标签 = 盲测窗内伪造成熟日的前向 60 日收益。</p>
+
+<p><b>覆盖边界</b>:</p>
+<table>
+<tr><td>场景</td><td>结果</td></tr>
+<tr><td>成熟 29 天</td><td>WAITING_LABEL_MATURITY, 不判色 ✅</td></tr>
+<tr><td>成熟 30 天(cat 双胜)</td><td>judged + 「建议升级评审」, 双轨成熟度 30/30 ✅</td></tr>
+<tr><td>反向(ens 双胜)</td><td>judged + 「维持 ENS = Champion」 ✅</td></tr>
+<tr><td>ens/cat 日期错位</td><td>IC 交集日 = min(双轨), n_ic_days 一致 ✅</td></tr>
+<tr><td>cat 缺预测日(空洞)</td><td>pred_days=39 / mature=29 如实, 不崩 ✅</td></tr>
+<tr><td>混合 vintage</td><td>single_vintage=False 如实报告 ✅</td></tr>
+<tr><td>dry-run 幂等</td><td>不写盘, 两次输出逐字节一致 ✅</td></tr>
+<tr><td>cat archive 缺失</td><td>waiting_cat_data ✅</td></tr>
+<tr><td>--state 指定路径</td><td>状态只写指定文件 ✅</td></tr>
+<tr><td>冻结模型缺失/篡改/config 不一致</td><td>FileNotFoundError / model_sha256 mismatch / config_hash mismatch, 拒绝追加 ✅</td></tr>
+</table>
+
+<p><b>CLI 级冒烟</b>: 合成 32 天成熟 → 真实 CLI <code>--dry-run --ens-archive/--cat-archive/--panel</code> → 判色输出完整(IC +0.956 vs +0.987, Δ +0.031, 裸 Sharpe 18.6 vs 17.2, IC 胜出但 Sharpe 未胜 → 维持 Champion——正是双指标 AND 逻辑的如实行为), rc=0。</p>
+
+<p><b>发现并修复的 bug</b>: 无判色逻辑 bug。预演暴露一个测试基建问题——合成面板若用纯随机游走(无持久 alpha), 分数只与 60 日复合收益相关而与逐日收益解耦, Sharpe 层不可分(初版 30 天用例失败); 改为持久 alpha 驱动后 IC/Sharpe 双指标均可判定。另: 假字节 cbm 触发 CatBoostError, intact 用例 mock load_model 只验证守卫放行。</p>
+
+<p><b>回归</b>: tests/model/test_oos_ic_compare.py + test_purged_walkforward_split.py 9 用例通过; 本文件 13 用例通过。生产调用方(周链 4a2a1b 无参调用)行为不变。</p>
+
+<h2>2026-09-10 — 盲测窗进度卡 + 判色当日推送增强(倒计时口径按真实规则, 非文档惯例日)</h2>
+
+<p><b>动机</b>(用户 2026-09-10): 盲测窗 12 月才判色, 但「等」不该是黑箱——自进化页要能一眼看到</p>
+<p><b>双轨成熟到哪了 + 还有多久判色</b>, 判色发生时要<b>主动把结论与依据推到手机</b>(而不是只推「有升级」)。</p>
+
+<p><b>① 倒计时口径裁决(关键, 与文档惯例日不一致, 如实分列)</b>: 裁决器 <code>judge_ready</code> = 盲测窗内</p>
+<p><code>realized_60</code> 已成熟的预测日数 ≥ 30, 据此 <b>判色日 = 第 30 个盲测预测日 + 60 交易日</b></p>
+<p>(预测日不足 30 个时按交易日历工作日外推, 一律按 ≈ 展示)。**实测 2026-09-10: ENS 门槛轨</p>
+<p>≈2027-01-08(87 交易日) / CAT 轨 ≈2027-01-12**。</p>
+<p>⚠ 与本文件/AGENTS.md 长期写的「标签全熟 ≈2026-12 中旬」<b>不是同一天</b>: 那句指的是<b>首个</b></p>
+<p>盲测预测日的标签成熟日(≈2026-12-02), 而判色要等<b>第 30 个</b>, 比它晚约 29 个交易日(≈2027-01 中旬)。</p>
+<p>两个日期都真实, 但只有后者是判色日 —— 卡片与推送固定附脚注说明该差异, 免得 12 月</p>
+<p>「倒计时没归零」被误判为故障。<b>不为了让页面好看而改判色门槛</b>(30 天门槛与</p>
+<p><code>promotion_gates.BLIND_MIN_MATURE_DAYS</code> 一致, 不动)。</p>
+
+<p><b>② 自进化页盲测窗进度卡</b>(<code>src/blind_window_progress.py</code> 单一事实源 + <code>web/evolve_manager</code> 接线</p>
+<p>+ <code>web/static/pages/research.js</code> 渲染, overview 缓存 120s): 双轨成熟度进度条(分母 = 判色门槛</p>
+<p>30 天, 因为要回答「离判色还有多远」; 预测日数与各轨自身 ETA 放副行)+ 判色倒计时(交易日/自然日)</p>
+<p>+ 判色后结果高亮(建议升级 = 绿 / 维持 = 蓝)与双轨对比表。ENS = 判色门槛轨(裁决器只 gate 它),</p>
+<p>CAT 起点永久晚 3 个交易日(09-04~09-08 未生成, 绝不回填)→ 两轨 ETA 分列。</p>
+<p>另分列 <b>实时状态</b>(按档案现算「裁决器现在会输出什么」)与 <b>周链存档状态</b>: 存档落后时标</p>
+<p>「等周五周链刷新」, 不把一周前的判定当现状; 判色后不再报滞后(成熟计数继续增长属正常)。</p>
+
+<p><b>③ 判色当日推送增强</b>(周链 4a2a1b): 触发条件由 <code>rc == 3</code>(只推「建议升级」)改为</p>
+<p><b><code>rc in (0, 3)</code>——「建议升级」与「维持 ENS = Champion」都推</b>(维持也是一条值得记录的裁决,</p>
+<p>旧行为会让维持结论静默消失)。正文 = 判定 + 双轨对比表(预测日/成熟日/IC 均值/IC 样本日/裸 Sharpe</p>
+<p>+ ΔIC)+ 判据(双指标 AND)+ <b>decision-log 链接</b> + 边界声明(判色仅为建议, 换冠仍需</p>
+<p>promotion_gates 全链 + 人工批准)。幂等: <b>首次判色 + 结论变更(升级↔维持)</b> 才推</p>
+<p>(<code>data/blind_window_push_state.json</code>); 推送失败<b>不记状态</b> → 下次周链重试。</p>
+
+<p><b>④ decision-log 手机可打开链接</b>(<code>src/deploy_decision_log.py</code>): 主仓库无 GitHub 远端,</p>
+<p><code>docs/decision-log.md</code> 手机上点不开 → 渲染成自包含 HTML 发布到 report 站点</p>
+<p><code>https://shanelau2.github.io/deepltrading-report/decision-log.html</code>(用户/仓库名从 site 仓库</p>
+<p>git remote 反推, token 不入链接, 不另设常量漂移)。周链 4a2a1a <b>先于</b>判色步骤发布,</p>
+<p>否则判色当日点开的是旧镜像; 只 add 单个 pathspec, 不动同仓库日报/周报; 失败只告警不阻断周链。</p>
+<p>在已运行的生产调用方<b>行为不变</b>这一点上: 周链步骤序只多了一个幂等发布步, arbiter 调用参数未变。</p>
+
+<p><b>测试</b>: <code>tests/model/test_blind_window_progress.py</code>(27: 常数同步/日历外推/成熟日/ETA 真实规则/</p>
+<p>双轨独立 ETA/状态机与滞后标注/对比表/推送字节上限/幂等与失败不记状态)、</p>
+<p><code>tests/web/test_blind_window_card.py</code>(5: overview 卡片 schema + 周链接线 + 异常不抛)、</p>
+<p><code>tests/report/test_deploy_decision_log.py</code>(10: remote→链接不泄漏 token / 自包含渲染 / 只写指定路径)。</p>
+<p>全部合成数据 + monkeypatch 推送, 不碰生产档案、不触发真实推送。</p>
+
+<p><b>顺手修复的时间炸弹</b>: <code>tests/report/test_ic_efficiency.py::test_combine_uses_calibrated_backfill</code></p>
+<p>硬编码 <code>calibrated_at = 2026-09-01</code>, 而 <code>load_turnover_calibration</code> 拿它与真实时钟比</p>
+<p>(CALIB_MAX_AGE_DAYS=7)→ 2026-09-10 起过期回退名义值, 该用例假红(与本次改动无关)。</p>
+<p>改为动态生成 <code>pd.Timestamp.now()</code>(AGENTS.md 测试约定 7)。</p>
+
+</main>
+</body>
+</html>
