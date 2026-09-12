@@ -29,7 +29,7 @@ li { margin:3px 0; }
 </head>
 <body>
 <main>
-<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-09-10 22:24 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
+<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-09-12 22:34 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
 <h1>历史决策记录</h1>
 
 <p>本文件只记录实验结果和已否决方案，不代表当前生产配置。</p>
@@ -38,6 +38,126 @@ li { margin:3px 0; }
 <li>旧 <code>DD8 + VT18</code>：历史口径；当前生产使用 V2 <code>DD×IC</code> 暴露。</li>
 <li>ATR 个股止损、Rank deterioration exit、威科夫默认过滤：经双窗口/滚动复核后不是默认生产规则。</li>
 <li>重训模型不得回填旧 OOS 面板；这会把验证变成样本内。</li>
+
+<h2>2026-09-11 — 盘后 partial bar 孤儿化(08-17~08-20 残留三周)+ 三条链前置数据巡查</h2>
+
+<p><b>背景(用户报障)</b>: 「修复数据只在盘中获取, 盘后没有新加载的问题」—— 要求三条链</p>
+<p>(盘中快报 / 盘后快报 / 周报)<b>运行前</b>先巡查近一周数据, 不正常则修复。</p>
+
+<p><b>实测(池内 1270 只, 面板 vs 归一化缓存)</b>: 近 150 个交易日里, 成交量比 ≠ 1.000 的</p>
+<p><b>只有 2026-08-17~08-20 四天</b>(量比中位 0.614 / 0.150 / 0.319 / 0.274, 1206/1189/</p>
+<p>1229/1231 只受影响, 共 4,855 行), 收盘差中位 0.24%~0.66%; 前后各日(08-13/14、08-21/24)</p>
+<p>量比<b>精确 1.000</b>。即面板在那 4 天固化着盘中快照价, 三周无人发现。</p>
+
+<p><b>根因(两条独立洞, 互相叠加成「孤儿」)</b>:</p>
+
+<li><b>滚动窗口孤儿化</b>: <code>signals.refresh_panel</code> 的同日期修正窗口</li>
+<p>   <code>REPLACED_WINDOW_DAYS = 14</code> 是相对 <code>cut</code> 的<b>滚动</b>窗口。污染一旦超过 14 天没被修,</p>
+<p>   就永远落在窗口外 —— 此后再没有任何链路会复查它。09-06 那次存量回灌</p>
+<p>   (<code>panel_cache_repair.py</code>) 吃同一个窗口, 只覆盖到约 08-22 之后。</p>
+<li><b>mtime 判据可被写入刷新绕过</b>: <code>downloader._cache_is_current</code> 判 partial 只看</li>
+<p>   文件 mtime(写入早于 bar 当日 16:00 ET)。而 **16:00 ET 之后任何一次写入都会刷新</p>
+<p>   mtime**(空转重写/批量落盘/面板回灌) → partial bar 永久「看起来已是最新」→</p>
+<p>   下载器不再重拉 → 缓存与面板<b>一起</b>停在盘中价, 于是 <code>refresh_panel</code> 也判「无</p>
+<p>   不一致」而放行。这解释了为什么「面板↔缓存一致」不能作为正确性的证据。</p>
+
+<p><b>修复(三层, 已落地)</b>:</p>
+
+<li><b>① 前置巡查 <code>src/recent_data_audit.py</code>(新增)</b>: 按内容、不看 mtime 的近 N 交易日</li>
+<p>  巡查(默认 7 = 近一周), 五项判据 —— ①面板↔缓存成交量差 &gt;5%(partial 签名,</p>
+<p>  <b>用成交量不用收盘价</b>: 面板与归一化缓存都是全复权口径, 价格比对会被复权因子污染</p>
+<p>  成假阳性; 而 <code>normalize_cache_df</code> 的 Volume 保真不变); ②面板缺 bar / 横截面覆盖;</p>
+<p>  ③结构护栏(占位行/OHLC 不自洽/非有限/Close≤0); ④<b>独立源抽样(yfinance)按日</b></p>
+<p>  量比 —— 唯一能抓「面板与缓存同为 partial」的关卡。修复 = 缓存 upsert 面板</p>
+<p>  (<code>panel_cache_repair.apply_repair</code>, 带备份)+ 失效增量特征缓存; ②/④ → 强制重拉。</p>
+<p>  <b>安全互锁</b>: 重拉后复扫, 仍偏低的日期里若<b>该日在缓存里没有更好值可换</b>(面板=缓存 →</p>
+<p>  既不在 replace 也不在 append)= 缓存自己还是 partial → 拒绝用它覆盖面板。该判定抽为</p>
+<p>  纯函数 <code>unfixable_low_dates(low, plan)</code>。</p>
+<p>  <b>互锁不能简化成「见 reference_low 就整体拒绝」</b>: 深扫 120 天时历史孤儿日</p>
+<p>  (08-17~08-20 的面板残留)同样让 reference_low 为真, 而它们的缓存是对的(有 replace</p>
+<p>  可换) —— 整体拒绝会<b>误杀本该做的修复</b>(设计时踩到, 已修正 + 加回归)。</p>
+<p>  <b>重拉必须走 <code>data_refresh_v2.py --force --bg</code> + <code>--wait</code> 两步</b>: 裸 <code>--force</code>(不加</p>
+<p>  <code>--bg</code>)会落到 v2 的「同步模式(兼容旧调用)」分支 → <code>data_refresh._refresh_all()</code> →</p>
+<p>  InstitutionScanner <code>main.py download</code> <b>不加 flag = 全量 11k 只</b>, 且写的是</p>
+<p>  InstitutionScanner 自己的缓存目录(<b>不是本项目 data/cache</b>)—— 既可能跑几小时,</p>
+<p>  又完全修不到本项目数据(设计时踩到, 已加调用形状契约测试)。另: <code>--wait</code> **即使下载</p>
+<p>  失败也返回 0**(只打印警告), 不能拿它的 rc 判成败 —— 靠重拉后复扫 + 上面的互锁确认。</p>
+<li><b>② 下载器内容判据 <code>PARTIAL_VOL_MIN_RATIO = 0.60</code></b>: 末 bar 量 / 近 20 日中位</li>
+<p>  低于阈值即判 partial → 重拉。阈值有实测支撑(池内 1270 只): 官方收盘 bar 的该比值</p>
+<p>  p50 = <b>1.046</b>, 阈值 0.60 只误判 <b>3.1%</b>; 盘中 partial p50 = <b>0.287</b>、p95 = 0.717,</p>
+<p>  命中约 88%。余下 0.6~0.95 的「轻 partial」(如 08-17 的 0.614)由 mtime 判据 +</p>
+<p>  巡查的 5% 关卡兜住。<b>不要上调阈值</b> —— 0.70 误判升到 8.1%。</p>
+<li><b>③ 三条链前置接入 <code>self_evolve._preflight_data_audit(step)</code></b>: 盘中链在</li>
+<p>  <code>_ensure_holdings_in_panel()</code> 之后、<code>signals.py</code> 之前; 盘后链同位; 周链第 0 步。</p>
+<p>  语义与 <code>vendor_splice_check</code> 同约定:<b>不阻断链</b>(rc=3 = 已自行告警; rc=1 =</p>
+<p>  修不了 → 补告警), 数据异常不该让当天报告彻底发不出。</p>
+
+<p><b>实测踩到的两个自身缺陷(均已修 + 加回归测试)</b>:</p>
+
+<li><b>独立源关卡必须按日聚合</b>: 初版取<b>整窗中位数</b>, 7 天里 6 天干净就把中位拉到</li>
+<p>  1.000, 单日 partial 被完全淹没 —— 09-11 实测面板 09-10 量比仅 0.294 而报「✓ 正常」。</p>
+<p>  改 <code>reference_low_dates()</code> 逐日聚合后精确命中。**教训: 聚合口径能吃掉单日异常,</p>
+<p>  验证必须打到真实故障日上。**</p>
+<li><b>阈值定标必须用池内样本</b>: 曾用 <code>data/cache</code> 全目录(含 800+ 只池外停更标的,</li>
+<p>  其末 bar 量比中位仅 0.297)测出「35% 误判」的假结论, 差点把阈值调错。改用池内</p>
+<p>  标的的官方收盘 bar 才是干净基准。</p>
+
+<p><b>当日(09-11)事故与归因</b>: 16:30 盘后链的下载子进程在 04:30:19 导入 <code>downloader.py</code></p>
+<p>时命中一次<b>编辑中间态</b>(<code>NameError: PARTIAL_VOL_MIN_RATIO is not defined</code> —— 常量</p>
+<p>引用已写入但定义尚未落盘), 下载 rc=1 失败; 而 <code>data_refresh_v2 --wait</code> **把 rc=1</p>
+<p>对链返回 0**(只打印警告), 链照常出信号 → 面板 09-10 留盘中价 → 收盘护栏</p>
+<p>「校验 31 只, 异常 31 只」推送告警。<b>这是本次改动的自伤, 已修复并验证子进程导入</b>。</p>
+<p>两点沉淀: ① 改动跨进程共享的模块(下载器被 detached 子进程导入)时, 中间态会被</p>
+<p>正在运行的链吃到 —— 多步编辑应先落定义再落引用; ② <code>--wait</code> 的 rc 掩盖是既有弱点</p>
+<p>(链无法从控制流得知下载失败), 由本次新增的前置巡查 ④ 补齐(它正是靠按日独立源</p>
+<p>量比在 09-10 上报警)。</p>
+
+<p><b>回归</b>: 新增 <code>tests/test_recent_data_audit.py</code>(25 例)+</p>
+<p><code>tests/downloader/test_cache_partial_content.py</code>(14 例)+</p>
+<p><code>tests/signals/test_self_evolve_chain.py</code> 5 例; <code>scripts/regression.py --quick</code></p>
+<p><b>1096 passed / 1 failed</b>(唯一失败 <code>test_render_fidelity</code> 系另一并行会话在途工作</p>
+<p>导致的 <code>output/ic_efficiency.json</code> 缺失, 与本改动无关)。</p>
+
+<p><b>深扫修复执行结果(2026-09-11 05:49~05:53)</b>: <code>recent_data_audit.py --days 120 --fix</code></p>
+<p>在链锁释放后运行 —— 首扫 partial 4,875 行(08-17:1206 / 08-18:1189 / 08-19:1229 /</p>
+<p>08-20:1231 / 08-14:9 + 03~12 日若干), reference_low 日 08-17/18/19/20 + 09-10 →</p>
+<p><code>data_refresh_v2 --force --bg</code> + <code>--wait</code> 重拉 rc=0(1273 只, 6 只 upstream_stale:</p>
+<p>APGE/AVB/CCZ/EQR/SPLG/WBS)→ 备份 <code>panel.parquet.bak_panel_repair_20260911_054925</code></p>
+<p>→ <b>replace 6,142 行 / append 1 / 失效特征缓存 6,132 行</b> → 复扫 partial 0 / 缺 bar 0。</p>
+<p>事后逐只核对缓存 09-10 Close 与 yfinance <b>精确一致</b>(AIT 318.58/SLB 56.01/TD 120.14…,</p>
+<p>量比 0.83~1.00) → 面板 09-10 已是官方收盘价。修复后 120 天窗口仅剩 17 条历史结构行,</p>
+<p>全是良性: 死股优先股/ADR 零成交平盘(BTSGU×5/SLMBP×2/BPYPO/BRKRP/HBANZ/VLYPO/BMNP)、</p>
+<p>XAG-USD 现货静默日×3、TV 指数单日平盘(.KOSPI/.XJO 06-29) + BMNP 08-18 开盘价低于</p>
+<p>Low 1.5%(集合竞价怪癖)。</p>
+
+<p><b>结构护栏两处实测校准(2026-09-11)</b>: ① <code>ohlc_inconsistent</code> 加 <b>2% 相对容差</b> ——</p>
+<p>交易所把开盘竞价成交价报成 Open, 可落在常规时段 H/L 之外; 全史 10 年实测同类违规</p>
+<p>62 条<b>最大仅 1.5%</b>(55 条集中 09-10 源数据一天), 而真腐败(拆股 ±35% / XAU 坏 bar)</p>
+<p>都是量级差。不加容差的话 09-10 那批怪癖会在次日变成「历史日异常」天天告警。判据</p>
+<p>收窄为 H&lt;L(不可能)/ Close 出区间 / Open 超 2%。② <code>KNOWN_PLACEHOLDER_SYMBOLS</code> 按实测</p>
+<p>扩展(CCZ 之外补 BTSGU/SLMBP/BPYPO/BRKRP/HBANZ/VLYPO/BMNP/XAG-USD/.KOSPI/.XJO)——</p>
+<p>死股平盘行不可修(缓存同样无量), 豁免; 尾部停更型则由下载完整性体检/收盘护栏另行覆盖。</p>
+<p>校准后 <code>--days 7</code>(巡查默认)与 <code>--days 120</code>(深扫)均返回 rc=0 ✓ 正常。</p>
+
+<p><b>非美指数 09-10 Close=NaN 补齐(2026-09-11)</b>: 16:30 链的 TV 抓取把 10 只非美指数</p>
+<p>(.KOSPI/.XJO/.KLSE/.N225/.SENSEX/.STI/000001/399001/800000/800100)的 09-10 bar</p>
+<p>写成 OHLC 有值但 Close=NaN(备份面板同样存在, 与修复无关; TV 源国内被墙复现超时)。</p>
+<p>当日属「最新日」被豁免, 但次日即变历史日会触发巡查告警 → 用 INDEX_TICKERS 的</p>
+<p>yfinance 别名直接补 10 只 09-10 官方收盘(备份 <code>panel.parquet.bak_indexclose_20260911_110927</code>,</p>
+<p>行数不变)。后续: 该 NaN 是否复发取决于 TV 源; 复发时 7 天窗口会在次日如实报非有限</p>
+<p>(属正确告警, refresh_panel 同日期修正可自愈)。</p>
+
+<p><b>快照一致性 ✗ 与本次事故无关(2026-09-11 排查)</b>: <code>v2_exposure_history.json</code> 显示</p>
+<p>09-02~09-04 判定 consistent, <b>09-09 起转 source_mismatch</b>(dev 35.44pp / 34.45pp,</p>
+<p>早于今天的下载失败)。机制: <code>dd_consistency_check</code> 拿复合 dd(-8.0%)对</p>
+<p>反推裸 dd×窗口暴露(-42.4%), 而反推裸 dd(-84.9%)是 <code>champion_equity.csv</code></p>
+<p><code>net/exposure</code> 全史 cumprod 的产物, 峰值在 <b>2021-11-05</b>(值 1.042)——</p>
+<p>DD 阶梯把暴露降到 0.10~0.45 后 2~10 倍放大, 裸曲线长年深亏 85%, 恰恰是</p>
+<p>DD8% 风控存在的理由(复合只从自身峰值回撤 8%)。窗口暴露(近 60 日均值 ≈0.5)</p>
+<p>解释不了<b>多年以前形成</b>的裸回撤 → 守卫按设计判「疑似并发重算(source_mismatch)」。</p>
+<p>09-09 突变与 <code>champion.py --update</code> 重建净值曲线 + V2 暴露层 09-10 改因果口径</p>
+<p>(同日前视修复, 数字作废重述)的暴露历史重算同频 —— 属展示层守卫, 不影响信号数据。</p>
+
 
 <h2>2026-09-08 — FROZEN 冻结 vs 退化恢复链裁决(违规先例回滚)</h2>
 
