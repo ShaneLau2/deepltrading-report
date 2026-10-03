@@ -29,7 +29,7 @@ li { margin:3px 0; }
 </head>
 <body>
 <main>
-<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-09-26 19:08 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
+<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-10-03 15:12 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
 <h1>历史决策记录</h1>
 
 <p>本文件只记录实验结果和已否决方案，不代表当前生产配置。</p>
@@ -2804,6 +2804,1784 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <p>(基线 4247, 净 +14 = T2 +8 / T3 +3 / T4 +4 / score_slot 13→12)、竞态门 10/10、</p>
 <p>语法门 417 src + 9 JS、CLI smoke 191。</p>
 
+<h2>决策三十 —— 生成架构切 3 袖袋交错(3×20×60D): 只改组合构建层, 模型与风控不动(2026-09-28)</h2>
+
+<p><b>背景</b>。瓶颈不在模型也不在风控, 在<b>持仓形态</b>: 生产是「单袖袋 Top30 / 60 日</p>
+<p>整仓换」—— 每 60 天一次性把 30 只全换掉, 换手集中在一天, 且**同一时点进出的仓位</p>
+<p>互相踩踏**。<code>data/champion_config.json → 袖袋执行</code> 与 <code>src/sleeves.py</code> 落地</p>
+<p>「3 个等权袖袋 × 每袋 20 名 × 物理持有 60 交易日, 每 20 个交易日只轮到 1 个袖袋</p>
+<p>到期换仓」。</p>
+
+<p>**实测(口径 = 裸 k×H + <code>risk_control_v2.realign_to_realized</code> 实现日 + 20bp 单边,</p>
+<p>产物 <code>output/sharpe_uplift_2026-09-28.md</code> / <code>_k_sweep</code>)**。</p>
+
+<table>
+<tr><td>配置</td><td>裸全窗 S</td><td>裸折6 S</td><td>×V2 全窗 S</td><td>×V2 折6 S</td><td>×V2 MDD</td><td>换手/年</td></tr>
+<tr><td><b>基线</b> k30 单袖袋</td><td>1.519</td><td>1.608</td><td>1.531</td><td>1.401</td><td>-17.6%</td><td>4.28x</td></tr>
+<tr><td>K=20 单袖袋</td><td>1.775</td><td>1.719</td><td>1.710</td><td>1.180</td><td>-20.7%</td><td>4.28x</td></tr>
+<tr><td>3 袖袋 k30</td><td>1.522</td><td>2.635</td><td>1.711</td><td>1.916</td><td>-16.2%</td><td>2.9x</td></tr>
+<tr><td><b>3 袖袋 k20(采用)</b></td><td><b>1.592</b></td><td><b>2.834</b></td><td><b>1.797</b></td><td><b>1.937</b></td><td><b>-17.3%</b></td><td><b>3.05x</b></td></tr>
+<tr><td>6 袖袋 k20</td><td>1.582</td><td>2.520</td><td>1.836</td><td>1.772</td><td>-17.3%</td><td>3.01x</td></tr>
+</table>
+
+<li><b>9 起点复核(折6 切点 ±20 天)</b>: 3袋k20 = <b>9/9 跑赢, 平均 ΔSharpe +0.528</b>;</li>
+<p>  6袋k20 同为 9/9 但均值只有 +0.328(去重更多 ⇒ 折6 Sharpe 1.937→1.772), 故取 3 袋。</p>
+<li><b>前视审计(信号 shift 1)</b>: 3袋k20 <code>shift0 1.797 / shift1 1.621</code>, |Δ|=0.176 &lt; 0.30</li>
+<p>  ⇒ 无前视虚增(与 <code>lookahead_healthcheck</code> 门槛同档)。</p>
+<li><b>袖袋内不做任何提前离场</b>: 交错日再平衡上试「rank&gt;100/75/50/40 提前淘汰+补位」</li>
+<p>  逐档单调劣化(全窗 1.583→1.599/1.555/1.481/1.432, 折6 2.818→2.775/2.657/2.482/2.430),</p>
+<p>  与既有铁律一致(<code>output/holding_exit_study.md</code> 20+ 变体通过者 = 0)。</p>
+
+<p><b>决策</b>。① 组合构建层切 3 袖袋交错(模型 <code>ens_60</code> 与 V2 风险层<b>不动</b>, 仍受</p>
+<p>滚动任期闸门约束, 本次不涉及重训);② <b>K=20 而非 K=30</b>;③ 播种 <code>ramp</code>(袖袋 0 今日</p>
+<p>建仓 / 1 / 2 在第 20 / 40 交易日建仓, 40 个交易日爬到满配)—— 与回测逐位同构;</p>
+<p><code>--seed-now</code> 为无爬坡变体(首期 20 名各 3 slot = 5%, 60 天后自然摊开)。</p>
+
+<p><b>资金规格</b>。<code>slot = 当日 V2 复合暴露 ÷ (3×20) = 暴露/60</code>; 某标的被 n 个袖袋同时</p>
+<p>持有 ⇒ 权重 = n × slot(1x/2x/3x 自然信念加权, 实测 62.5% 只在 1 袋 / 24.9% 在 2 袋</p>
+<p>/ 12.6% 在 3 袋)。<b>暴露不可用 ⇒ 权重 NaN fail-closed, 绝不兜 1.0</b>。</p>
+
+<p><b>产物与入口</b>。<code>data/sleeve_state.json</code>(台账, <code>state_io.write_json_atomic</code>) +</p>
+<p><code>output/sleeve_plan_&lt;date&gt;.csv</code>(逐袖袋槽位) / <code>sleeve_weights_&lt;date&gt;.csv</code>(聚合权重) /</p>
+<p><code>sleeve_instructions_&lt;date&gt;.md</code>(人读, 含「与 holdings.csv 对照」) + 提醒行。</p>
+<p><code>.venv/bin/python src/sleeves.py</code> 默认只读状态, <code>--run</code> 执行当日档期(<b>幂等</b>:</p>
+<p>同日重跑 <code>due</code> 必空), <code>--asof</code> 补跑, <code>--reset --yes</code> 清台账。</p>
+<p><b>已挂盘后日链</b>(<code>self_evolve</code>, 排在 <code>v2_prod_exposure.py</code> <b>之后</b> —— slot 权重要</p>
+<p>当日精确暴露), rc=3 = 降级(配置/暴露/信号新鲜度, 计划仍写出)走 60 分钟冷却推送;</p>
+<p><b>盘中链不跑</b>(午间 signals 是盘中快照, 换仓决策以收盘信号为准)。</p>
+
+<p><b>实现期抓到的三个真 bug(已修 + 回归锁)</b>。① <b>日历越界塌陷</b>: panel 日历只到最新</p>
+<p>交易日, 直接在其上 <code>searchsorted</code> 会把 base 钉在末端 ⇒ 「今天+60 交易日」对三袋</p>
+<p>都算成同一天, 三个袖袋到期日全塌到一起(交错性归零)。修法 = <code>extended_calendar</code></p>
+<p>向后接 <code>bdate_range</code> 再计数; 锁 <code>test_shift_trading_days_counts_on_extended_calendar</code>。</p>
+<p>② <code>latest_signals</code> 原来的 <code>sorted(glob)[-1]</code> 会选中 <code>signals_*_filtered.csv</code></p>
+<p>(<code>'_' &gt; '.'</code>)⇒ 改用 <code>^signals_\d{4}-\d{2}-\d{2}\.csv$</code> 精确匹配。③ <code>--out-dir</code></p>
+<p>同时被当成读信号目录与写产物目录, 补 <code>--sig-dir</code> 分离。</p>
+
+<p><b>遗留(已于同日收口, 见决策三十一)</b>。<code>trade_plan_*.csv</code> 的 <code>pos_size</code> 列当时仍是</p>
+<p><b>单袖袋 Top-N 行口径的观察值</b>(N=30), 与袖袋权重是两套数字(模式七十: 同一份数据</p>
+<p>两套数字 = 必然漂移)。</p>
+
+<p><b>测试</b>。<code>tests/model/test_sleeves.py</code> 20 例(日历越界 / ramp·now 播种错峰 / 到期与</p>
+<p>迟到触发 / 权重代数 Σweight==暴露 / 暴露不可用 fail-closed / 选池剔 ETF·指数·商品·</p>
+<p>加密·杠杆 / 端到端幂等 + 三袋轮换推进 / 渲染纪律文案「物理持有 60 交易日·不做个股</p>
+<p>止损」/ 配置读不到必须出声且不能整除时拒) +</p>
+<p><code>tests/signals/test_self_evolve_sleeves_step.py</code> 5 例(盘后链真的跑 / 排在 v2 之后 /</p>
+<p>rc=3 必须推送且带冷却 / 盘中链不许跑 / 链结构可切分)。</p>
+
+
+<h2>决策三十一 —— <code>trade_plan.pos_size</code> 收成袖袋口径: 三处写点合一, 下单规格单一事实源(2026-09-28)</h2>
+
+<p><b>背景(模式七十的正面处理)</b>。决策三十把组合构建层切成 3 袖袋, 但 <code>trade_plan_*.csv</code></p>
+<p>的 <code>pos_size</code> 还留在「单袖袋 Top-N 行口径」: <code>signals.py</code> 写一次、`v2_prod_exposure</p>
+<p>.annotate_trade_plan<code> 用当日精确暴露覆盖一次, 两处各自 </code>暴露 ÷ N`。于是**同一个文件里</p>
+<p>同时存在两套仓位数字*<i> —— 袖袋权重在 <code>sleeve_weights_</i>.csv</code>, 「暴露/N」在 trade_plan,</p>
+<p>且后者看起来更像「最终下单规格」(决策权=自动)。靠文档写「别看这个」来防漂移 = 没防。</p>
+
+<p><b>决策</b>。<code>pos_size</code> 改成<b>袖袋权重</b>, 且<b>只保留一份实现</b>:</p>
+<p><code>sleeves.exec_size_frame(symbols, exposure, account, *, state, state_path, root)</code> 是</p>
+<p>唯一算法, 三处调用它、各自只负责「传哪一份暴露」:</p>
+
+<table>
+<tr><td>写点</td><td>何时</td><td>暴露取值</td><td>角色</td></tr>
+<tr><td><code>signals.py</code></td><td>出信号时</td><td>最近可用(<code>exposure_as_of</code> 标注)</td><td>初值</td></tr>
+<tr><td><code>v2_prod_exposure.annotate_trade_plan</code></td><td>收盘后</td><td>当日精确复合暴露</td><td>覆盖</td></tr>
+<tr><td><code>sleeves.run() → annotate_trade_plan</code></td><td><b>换仓之后</b>(链上最后一道)</td><td>同上</td><td>权威</td></tr>
+</table>
+
+<p>第三条是必需的: 前两处都跑在<b>换仓之前</b>, 轮换改了台账 ⇒ 不补这一道, 当天 trade_plan</p>
+<p>会停在换仓前的持仓上(当天买什么、卖什么都对不上)。</p>
+
+<p><b>新语义</b>。<code>pos_size = 该标的占用的槽位数 × 暴露 ÷ (袖袋数 × 每袖持仓数)</code>;</p>
+<p>新增两列 <code>sleeve_slots</code>(1/2/3)与 <code>sleeve_expires_on</code>(该袋到期日), 让 trade_plan</p>
+<p>自解释、不必再开第二个文件。<b>不在任何袖袋里 ⇒ 明确 0</b>(台账是权威, 缺席 = 不持有),</p>
+<p>而不是 NaN。</p>
+
+<p><b>fail-closed 两条(方向不同, 都被测试锁死)</b>。① 暴露不可用 ⇒ <b>在册</b>标的权重 NaN,</p>
+<p>绝不兜满仓;② 袖袋台账读不出来 ⇒ 全表 NaN + <code>exec_mode</code> 标「袖袋台账未就绪(拒绝给</p>
+<p>仓位数): &lt;原因&gt;」。⚠ 实现时踩到的坑: 用 <code>fillna(0)</code> 一把梭会把 ① 也变成 0 ——</p>
+<p>「不可用」被静默吃掉(信号层那类 2~6 倍放大的同款事故, 只是方向反过来)。锁法 =</p>
+<p>只对<b>缺席行</b>置 0(<code>test_exec_size_frame_absent_is_zero_but_nan_exposure_stays_nan</code></p>
+<p>断言「在册 NaN 行一个都没被填成 0」)。</p>
+
+<p><b>配置面</b>。<code>仓位执行.N</code> <b>不再是除数</b>(只保留为选股/研究层 <code>top_k</code>, 并加 <code>N的用途</code></p>
+<p>字段说明);<code>公式 / 仓位列 / 范围 / fail_closed / 执行权威</code> 全部改写;删掉</p>
+<p><code>过渡收敛</code> 待办字段。<code>执行权威</code> 反向收口: <b>下单看 trade_plan</b>,</p>
+<p><code>sleeve_weights_&lt;date&gt;.csv</code> 降级为台账视图(多 held_since/expires_on)。</p>
+
+<p><b>测试(改架构必须一起改, 不许放宽断言换绿灯)</b>。<code>tests/model/test_v2_exec_sizing.py</code></p>
+<p>原 2 例锁的是「暴露/N」旧规格 ⇒ <b>重写</b>为袖袋规格(跨袋重复持有 = 2 倍权重 /</p>
+<p>Σpos_size==暴露 / 缺席=0 / 台账缺失 fail-closed), 并<b>新增</b>第三例。</p>
+<p><code>tests/ops/test_exec_config_single_source.py::test_v2_annotate_uses_config_n_not_the_default</code></p>
+<p>的<b>意图</b>(「调用方 ROOT 的配置必须真的流进产物」, 模式五)保留、载体换成袖袋参数</p>
+<p>(2×10 + 账户 5 万 vs 默认 3×20 + 10 万, 数字必不同 ⇒ 抓得住)。<code>tests/model/test_sleeves.py</code></p>
+<p>新增 4 例: 列契约 / 缺席=0 与 NaN 不可混淆 / trade_plan 改写值 == <code>build_positions</code> /</p>
+<p>端到端「换仓后旧仓清零、新仓拿槽位权重」。</p>
+
+<p><b>顺带修掉一个真 bug</b>。<code>sleeves.annotate_trade_plan</code> 第一版算完列忘了</p>
+<p><code>df.to_csv(path)</code>, 计划照写、trade_plan 一个字节没动 —— 正是新加的端到端用例当场抓到的</p>
+<p>(单测「函数返回了文件名」这种只测 loader 的写法抓不到, 模式五)。</p>
+
+<p><b>实现期抓到的第二个真 bug(工具层的, 值得单记)</b>。改 <code>signals.py</code> 的 <code>plan_cols</code></p>
+<p>字面量时, 编辑工具把 <code>"v2_exposure", ..., "exec_mode",</code> 这一行<b>复制了 15 份</b>。</p>
+<p>它是<b>语法完全合法</b>的(list 里重复字符串), 于是 <code>py_compile</code> 过、语法门过、</p>
+<p><b>4330 个测试全绿</b>, 而 <code>long_list[plan_cols].to_csv()</code> 会把 `v2_exposure /</p>
+<p>exposure_as_of / pos_size / pos_notional_usd / exec_mode` 各写成 <b>15 份重复列</b></p>
+<p>—— 下单规格文件当场烂掉且<b>无人报错</b>。</p>
+
+<p>这类"语法合法、语义错"的破坏<b>只能靠结构断言抓</b>, 所以补</p>
+<p><code>tests/signals/test_signals_contract.py::test_trade_plan_col_list_has_no_duplicates</code>:</p>
+<p>直接 <code>ast.parse</code> 源码取 <code>plan_cols</code> 的字符串字面量, 锁「无重复 + 袖袋两列必须在」。</p>
+<p>已做<b>反向验证</b>(故意注入一行重复 ⇒ 红; 还原 ⇒ 绿)。</p>
+
+<p><b>收尾核对(真实生产数据, 只读)</b>。<code>output/trade_plan_2026-09-25.csv</code> 20 行全部</p>
+<p>在册, 与 <code>output/sleeve_weights_2026-09-25.csv</code> <b>逐值一致</b>(max|Δ| &lt; 1e-12);</p>
+<p>每只 <code>0.55/60 = 0.9167%</code>, <code>Σpos_size = 0.1833 = 暴露/3</code> —— ramp 期只有 1/3 资金在</p>
+<p>建仓的袖袋上(设计内)。重跑 <code>src/sleeves.py --run</code> 幂等(<code>due</code> 空、</p>
+<p><code>sleeve_weights</code> md5 逐字节不变), 只把 trade_plan 的四列重刷成袖袋口径。</p>
+<p>(<code>output/trade_plan_*.csv</code> 在 .gitignore 内, 不是入库产物。)</p>
+
+<p><b>回归</b>。全量 <code>pytest tests/</code>(本机 <code>test_retrain_adopt_gate.py</code> 因 Torch</p>
+<p><code>.to(device)</code> 直接 abort 整个进程, 改动前后一致, 排除该文件):</p>
+<p><b>4330 passed / 3 skipped / 2 failed</b>; 两个 failed(<code>test_render_fidelity</code> 的</p>
+<p>ic-efficiency 卡片 ±号、<code>test_expr_routing</code> 的 pending expr 卫生)经 <code>git stash</code></p>
+<p>确认<b>改动前同样红</b>, 与本次无关。</p>
+
+<hr>
+
+<h2>决策三十二 —— 生产排序公式变更需人工批准: 承认这是<b>约定不是闸门</b>(2026-09-28)</h2>
+
+<p><b>起因(一处「机制与意图之间的缝」)</b>。<code>frozen_guard.retrain_allowed()</code> 表达的不变量是</p>
+<p>「任期内生产模型不变」, 但它的实现是<b>路径拦截</b>(<code>frozen_guard.py:196</code> 只问「你要写的</p>
+<p>目录是不是生产 <code>models/</code>」)。于是<b>存在一条不写任何文件就能改变生产输出的路径</b>:</p>
+
+<p><code>models/cat_frozen.cbm</code> 已经在盘上(<code>cat_blind_archive.py</code> 建的盲测窗模型, 冻结点</p>
+<p>2026-09-04, 247 万样本, 附 <code>cat_frozen_meta.json</code>)。若有人把 <code>signals.py</code> 的排序改成</p>
+<p><code>(rank(mlp) + rank(lgb) + rank(cat_60)) / 3</code> ——</p>
+<p><b>不写一个字节</b>, 闸门完全不触发, 而任期内「生产模型不变」的承诺已被绕过。</p>
+
+<p>⚠ <b>方向也是已知的坏方向</b>: AGENTS.md 记 cat 为<b>研究资产、不升格</b>(全窗判定 ⚠</p>
+<p>五分位命中率单调性失败), 且 IC 层 DM 检验 cat vs ens <b>无显著差异</b>(p=0.80)。把一个</p>
+<p>未被证明更好的模型混进生产排序, 正是本仓反复警惕的那类事。</p>
+
+<p><b>核查结论(2026-09-28 实测, 免得后来人当成火情)</b>。<code>signals.py</code> 内<b>无任何 cat 引用</b></p>
+<p>(grep 命中的全是 <code>concat</code>/<code>category</code>, 不是 CatBoost); 生产排序仍是</p>
+<p><code>signals.py:1778</code> 的 <code>rank_average_ensemble(P_mlp, P_lgb, ...)</code> 二元逐日秩平均。</p>
+<p>⇒ 当前<b>未被污染</b>, 这是<b>预防性加固</b>, 不是救火。</p>
+
+<p><b>决策(用户 2026-09-28 拍板: 取三个候选里最轻的一个)</b>。</p>
+
+<li><b>约束内容</b>: 生产排序公式的<b>成分集或合成方式</b>变更(增删模型、改权重、改</li>
+<p>   rank/zscore 口径)需<b>人工批准</b>, 并在本文追加一条决策记录。</p>
+<li><b>被批准公式的锚点</b>: <code>signals.py</code> 中 <code>score_60</code> 的构造 = `rank_average_ensemble(</li>
+<p>   P_mlp_60, P_lgb_60, ...)<code> = </code>rank(mlp_60)<code> 与 </code>rank(lgb_60)` 的<b>逐日</b>秩平均,</p>
+<p>   二元等权。<code>composite = zscore(score_60)</code> 仅展示用, 单调变换不改排序;</p>
+<p>   <code>score_20/40</code> 只供内部参考, <b>不参与选股排序</b>。</p>
+<li>⚠ <b>本条是流程约束, 靠约定不靠机制</b> —— 这是<b>明示的取舍</b>, 不是遗漏。</li>
+<p>   <code>frozen_guard</code> 仍只拦「写 <code>models/</code>」, 拦不住「读一个已存在的模型改变排序」。</p>
+<p>   唯一让它强于纯口头约定一点点的, 是 <code>oos_ens_guard</code> 已独立守护<b>面板侧</b> <code>ens_*</code> 的</p>
+<p>   秩平均语义 —— 但那是<b>回测/周检面板</b>, 不是 <code>signals.py</code> 的<b>每日生产排序</b>,</p>
+<p>   两者不是同一道闸(模式七十: 两套口径并存且都不说破 = 最坏形态)。</p>
+
+<p><b>为什么现在不升级成机制</b>(留给将来, 附判据免得重复讨论)。真正堵住需要把闸门从</p>
+<p>「拦写」扩成「拦生产排序变更」, 最小形态 = 比对排序公式指纹(如 score 构造段的规范化</p>
+<p>文本哈希)并在任期内拒绝变更。代价: ①需要一条<b>比对基线</b>, 基线本身错了就永久假红;</p>
+<p>②正常重构(改注释/调格式/换等价写法)会误报, 需要规范化到「语义等价」, 而语义等价判定</p>
+<p>比路径判定难得多; ③<code>signals.py</code> 是全仓最大文件之一, 指纹漂移的<b>归因成本高</b>。</p>
+<p>⇒ 收益(堵一条需要主观故意的路径)配不上这三项成本, 取约定。</p>
+<p>若将来要升, 前置条件: ①先有一次真实「误报/假红」案例能证明指纹法稳定判对; ②或</p>
+<p>cat 等研究资产先<b>物理迁出</b> <code>models/</code>(那时这条缝自然变窄, 且不需要指纹法)。</p>
+
+<p><b>与既有守卫的分工</b>(别重复造闸门)。<code>frozen_guard</code> = 拦<b>写</b> <code>models/</code>;</p>
+<p><code>oos_ens_guard</code> = 守<b>面板</b> <code>ens_*</code> 秩平均; <code>promotion_gates</code> = 竞技场<b>换冠军</b>的</p>
+<p>14 项; <code>champion_term</code> = 任期与人工批准台账。本条 = 约束<b>每日生产排序公式</b>的人工</p>
+<p>变更。四个都拦不到「读一个现成模型改排序」⇒ 本条是<b>明说的第五个缺口</b>, 不是重复。</p>
+
+<hr>
+
+<h2>决策三十三 —— 袖袋「为什么有效」归因更正 + 引擎权重漂移口径验证(<b>不改生产参数</b>, 2026-09-28)</h2>
+
+<p><b>这不是一次参数变更, 是把决策三十的</b>理由<b>补完整 + 验证一个此前没写下来的隐含假设。</b></p>
+<p>3 袖袋 × K=20 × 60D 的<b>生产参数一字未动</b>; 本条只做两件事: ①归因更正;</p>
+<p>②把「每日重平衡回等权」这个假设从口头变成有实测数字的书面结论。</p>
+
+<h3>① 归因更正: 决策三十的对比混了两个变量</h3>
+
+<p><code>sharpe_uplift_2026-09-28.md</code> 的对照表把「3袋k20」与「k30 单袋」相比, 但</p>
+<p><code>simulate_daily</code> 里每袋占 1/n 资金、袋内 k 只等权 ⇒ <b>单只权重 = 1/(n×k)</b>。</p>
+<p>固定 k 拉高袋数, 会<b>同时</b>把持仓只数从 k 变成 n×k(分散化) —— 而分散化与</p>
+<p>tranching(错开换仓栅格)<b>各自独立地</b>降波动 ⇒ 降幅无法归因给袋数。</p>
+
+<p><code>scripts/sleeve_phase_scan_2026-09-28.py</code> 补两组网格: ①固定 k ∈ {10,20,30} ×</p>
+<p>袋数 1..6(<b>现实可比, 但混了分散化</b>); ②<b>锁 n×k ≡ 60</b> 的纯 tranching 对照</p>
+<p>(持仓只数与单只权重全程不变, 只错开换仓栅格)。</p>
+
+<p><b>修正后的归因</b>:</p>
+<li><b>收益主要来自 K, 不是袋数</b>。同一份表里「K=20 单袋」折6 已 <b>1.719</b>(袋数=1),</li>
+<p>  「3袋k30」折6 已 <b>2.635</b>(袋数=3, K 未变) —— 两个方向各自都能拿到大部分增益。</p>
+<p>  「3袋k20 折6 2.834」的表观优势是<b>两个变量叠加</b>, 不该整笔记在袋数上。</p>
+<li><b>袋数的真收益是稳定性, 不是期望收益</b>。纯 tranching 组 <b>CV(S) 降 −55.2%</b></li>
+<p>  (0.088→0.039, n×k≡60 恒定)⇒ 同一 60 只持仓下错开换仓日, 确实让**风险调整后</p>
+<p>  表现**对重平衡时点显著不敏感, 与 Zarattini &amp; Pagani(2026-04)的 1/N 衰减一致。</p>
+<li>⚠ <b>别引错数字</b>。会话里流传过的「袋数降 cum% 极差 63~70%」是<b>混了分散化</b>的</li>
+<p>  设计产物, 且 cum% 极差在同时改变 k 的组里<b>不可比</b>: const60 组 cum 极差</p>
+<p>  <b>731→1609 pp 反而上升</b>(k 从 60 降到 10 ⇒ 袋内更集中 ⇒ 尾部路径更长)。</p>
+<p>  <b>该数字从未进入本文档或 AGENTS.md, 勿引用。</b></p>
+<li><b>判据纪律(新立)</b>: 「相位敏感性」<b>只用 CV/Sharpe 口径, 不用 cum% 极差</b>。</li>
+<p>  绝对 std 缩小也分不清「真变稳」与「均值涨的天花板效应」; CV 除掉尺度才可分。</p>
+<p>  反例(已锁测试): mean −50%/std −25% 时, 绝对 std 读法会把<b>崩塌</b>误报成</p>
+<p>  「变稳了 25%」, CV 正确报 +50%「更不稳」。</p>
+
+<p><b>顺带修掉的方法学 bug</b>: 扫描第一版 <code>shift_grid</code> 丢前 <code>phase</code> 天 ⇒ 样本</p>
+<p>1292→1237 <b>不等</b>, cum% 跨相位是苹果比橘子(丢的头部含 2021-22 熊市 ⇒ 系统性</p>
+<p>高估 φ 大的相位)。已改<b>前补预热历史</b>, 288 行评估窗恒为 <b>1042 天</b></p>
+<p>(<code>2022-07-29→2026-09-25</code>), 数字口径变了<b>别拿旧表比</b>。</p>
+
+<h3>② weight_drift: 引擎隐含「每日重平衡回等权」, 实测不敏感</h3>
+
+<p><code>champion_stop.simulate</code> 逐日算 <code>daily[i] = Σ(w_j·r_j)/Σ(w_j)</code>, 而 <code>held_w</code></p>
+<p><b>只在入场日设定、之后从不更新</b>(<code>champion_stop.py:501-507</code> / <code>713-717</code>), 生产路径</p>
+<p>无宽度倾斜 ⇒ <code>held_w</code> 恒为 1.0 ⇒ <b>每日重平衡回等权</b>, 不是 60 日买入持有;</p>
+<p>且换手成本只在 <code>i % HORIZON == 0</code> 收一次, <b>这个隐含的日度再平衡换手完全没计费</b>。</p>
+<p>这是<b>所有历史回测数字的共同地基</b>, 故必须实测而不是推断。</p>
+
+<p><code>scripts/weight_drift_2026-09-28.py</code> 三条路径(同一批选股): <code>eq</code> = 现行;</p>
+<p><code>bh</code> = 买入持有(段内不重平衡)⇒ 隔离纯路径效应; <code>bh_cost</code> = 买入持有 + 段内日度</p>
+<p>漂移换手也计费。5 配置(k30n1/k20n1/k20n3/k10n1/k10n6):</p>
+
+<table>
+<tr><td>判据</td><td>结果</td></tr>
+<tr><td>**\\</td><td>ΔSharpe\\</td><td>最大**(eq−bh 与 eq−bh_cost 全 10 组)</td><td><b>0.053</b></td></tr>
+<tr><td>阈值 \\</td><td>ΔS\\</td><td>≥ 0.30 命中</td><td><b>0/5</b>(两条路径都是)</td></tr>
+<tr><td>现役 3袋k20 的 eq 路径</td><td><b>1.592 / +1912.69%</b> —— 与 <code>sharpe_uplift</code> 记录逐位一致 ✓</td></tr>
+<tr><td><code>eq</code> vs <code>sleeves.simulate_daily</code></td><td>**max\\</td><td>diff\\</td><td>= 0**(n=3 时 3.5e-18)</td></tr>
+<tr><td>日均漂移换手(组合层面, 无量纲)</td><td>1.579 ~ 1.847</td></tr>
+</table>
+
+<p><b>结论: 历史数字地基是稳的, 不需要重估。</b> 日均漂移换手按 0.2% 费率折算单日</p>
+<p>~0.33%, 相对日均波动小两个数量级, 摊到 Sharpe 上看不见; 且 <code>eq−bh_cost</code> 在 5 个</p>
+<p>配置中 3 个为<b>正</b> —— 日度等权再平衡本身的「收割波动」副作用与漏计成本方向相反,</p>
+<p>互相抵消。⚠ 这个假设<b>此前从未写进任何文档</b>, 现在有数字兜底。</p>
+
+<p><b>边界(三条, 别外推)</b>。① 段内不模拟个股止损/止盈(用 <code>sleeves</code> 纯持有 60 日做床</p>
+<p>以隔离单一变量)⇒ 有止损时漂移会被截断, <b>差异只会更小</b>, 故该结论对生产偏保守;</p>
+<p>② 日均漂移换手是<b>组合层面</b>换手率, 真实执行可用阈值/带宽少换 ⇒ <code>bh_cost</code> 是</p>
+<p><b>悲观上界</b>; ③ <code>eq</code> 与 <code>bh_cost</code> 的换仓日成本口径<b>不完全对称</b>(前者理想化为 1.0,</p>
+<p>后者用漂移后实际权重 0.245~0.277)⇒ 两者之差只作参考。</p>
+
+<h3>产物与锁</h3>
+
+<li><code>scripts/sleeve_phase_scan_2026-09-28.py</code> → <code>output/sleeve_phase_scan_2026-09-28.{md,json}</code></li>
+<p>  (24 配置 × 12 相位 ≈ 2.5 分钟; 两次跑<b>逐字节一致</b>)</p>
+<li><code>scripts/weight_drift_2026-09-28.py</code> → <code>output/weight_drift_2026-09-28.{md,json}</code></li>
+<p>  (确定性: 两次跑 JSON 逐字节一致)</p>
+<li><code>tests/research/test_sleeve_phase_scan.py</code> <b>18 例</b>, 全部经<b>变异测试</b>验证过</li>
+<p>  三个锁真的抓得住: ①还原成「丢前 φ 天」→ 3 红; ②<code>const60</code> 的 k 改坏(n×k≠60)→ 2 红;</p>
+<p>  ③<code>cv_change</code> 判不出时返回 0 而非 nan → 7 红。含真实产物契约(评估窗恒等、</p>
+<p>  纯 tranching 组 CV 必须为负、长尾恒等式 <code>极差 == 尾上+尾下</code>)。</p>
+
+<p><b>不改的东西(明确)</b>。生产参数(3 袋 / K=20 / 60D)、<code>sleeves.py</code> 引擎、</p>
+<p><code>champion_stop.py</code> 引擎、模型、风险层 —— 本条<b>一个字节都没动</b>。两个脚本都是</p>
+<p>只读对照, 唯一的「改动」是把 <code>cv_change</code> 抽成纯函数以便单测(报告走它 ⇒ 测的就是跑的)。</p>
+
+<hr>
+
+<h2>决策三十四 —— 两个外部新方法提案的实测否决(RAVEN / 标签期限悖论)+ 探针参照系修复(2026-09-28)</h2>
+
+<p>两个提案都来自外部(arXiv / 公众号), 都与生产<b>直接相关</b>, 都走本仓既定关卡。</p>
+<p><b>本条不改生产参数、不改模型、不改排序。</b> 唯一动生产代码的是探针的一处**参照系</p>
+<p>失配修复<b>(见 ③), 因为它会让所有未来的上界测试给出</b>假否决**。</p>
+
+<h3>① RAVEN(<code>arXiv:2606.24062</code>, Regime-Aware Variable-context Expert Network)</h3>
+
+<p><b>提案</b>: 金融序列的最优回看窗口随 regime 变, 固定窗口是错配; 做法 = 学 patch</p>
+<p>重要性 → CIT 派生出嵌套前缀窗口 → 尺度专属 MoE 专家 + GCR 全局分支 + CAW 去冗余。</p>
+<p>(注意: 与另一同名工作 Flash Linear Attention 的「Raven / 稀疏记忆路由」<b>无关</b>。)</p>
+
+<p><b>先例</b>: LSM / 储备池 / LSTM / Transformer 已被同一关卡否决</p>
+<p>(<code>output/method_adoption_assessment_20260922.md</code>, 20 天路径 Δ +0.0004 ± 0.0133)。</p>
+<p><b>本次不是重复实验</b> —— RAVEN 用 120 日回看, 是那次的 6 倍, 而「长回看」正是</p>
+<p>RAVEN 机制的核心。</p>
+
+<p><b>它要消费的原始信息 = 不同尺度的日收益路径</b>(嵌套窗口 = 同一路径的不同前缀)⇒</p>
+<p>直接喂 <code>rvlag1..rvlagN</code>(对数收益, 纯因果, <code>groupby.shift</code> 一次到位)。</p>
+
+<table>
+<tr><td>档</td><td>lag 数</td><td>base IC</td><td>full IC</td><td>配对 Δ</td><td>t</td><td>判定</td></tr>
+<tr><td>lag1_20</td><td>20</td><td>+0.1046</td><td>+0.1018</td><td>−0.0028</td><td>−2.41</td><td>无增量(显著更差)</td></tr>
+<tr><td>lag1_60</td><td>60</td><td>+0.1046</td><td>+0.1051</td><td>+0.0005</td><td>+0.34</td><td>无增量</td></tr>
+<tr><td><b>lag1_120</b></td><td><b>120</b></td><td>+0.1046</td><td>+0.1023</td><td><b>−0.0024</b></td><td>−1.52</td><td>无增量</td></tr>
+</table>
+
+<p><b>判读: 不实现。</b> 三档全部零增量, <b>包括论文自己用的 120 日窗口</b>。这是<b>上界</b>:</p>
+<p>连 LGB 拿着全路径(120 个前缀, 200 棵树)都榨不出东西, 「自适应选窗口 + 尺度 MoE」</p>
+<p>面对的是同一份信息, 没有理由相信它能榨出来。20 日档 −0.0028(t=−2.41) 是</p>
+<p><b>显著更差</b> ⇒ 原始 lag 塞进去会引入冗余/噪声。</p>
+
+<p><b>边界</b>: 测的是「它要消费的信息有没有增量」, <b>不是</b>「这套结构能不能拟合出来」;</p>
+<p>本文件给的是<b>不做的理由</b>, 不是「RAVEN 无效」的证明。举证责任在主张方。</p>
+
+<h3>② 标签期限悖论(ICML 2026, 易方达《预测次日收益, 模型一定要用次日收益做标签吗?》)</h3>
+
+<p><b>提案</b>: 金融高噪声序列里「训练标签必须对齐评估目标」的传统假设不成立 —— 有效</p>
+<p>信息被市场消化后边际增量归零, 而特质扰动按布朗运动<b>线性</b>膨胀, 于是存在**信噪比</p>
+<p>拐点<b>, 最优监督期限在</b>中间**而非终点。报告: 中证500 LSTM 截面 IC 0.085→0.103,</p>
+<p>IR 0.72→0.86; 并称美股定价更快 ⇒ 拐点更靠前。</p>
+
+<p><b>为什么本项目值得测</b>: 生产 = <code>fwd_ret_60</code> 训练 / <b>60 日</b>持有 / 60D 重平衡 ⇒</p>
+<p>标签与目标<b>完全对齐</b>, 正是论文要质疑的那一档。</p>
+
+<p><b>受控实验(唯一变量 = 训练标签期限)</b>: 同一套 base26、同一 LGB 超参、同一切点,</p>
+<p><b>评估目标恒为 <code>fwd_ret_60</code></b>(= 生产实际排序依据)。</p>
+
+<table>
+<tr><td>训练标签</td><td>IC(对 fwd_ret_60)</td><td>Δ vs 对齐档</td><td>t</td><td>判定</td></tr>
+<tr><td><code>fwd_ret_60</code>(对齐=生产)</td><td><b>+0.1046</b></td><td>—</td><td>—</td><td>基线</td></tr>
+<tr><td><code>fwd_ret_40</code></td><td>+0.1023</td><td>−0.0023</td><td>−0.84</td><td>无显著差异</td></tr>
+<tr><td><code>fwd_ret_20</code></td><td>+0.0716</td><td><b>−0.0330</b></td><td><b>−7.70</b></td><td>⚠ <b>显著更差</b></td></tr>
+</table>
+
+<p><b>判读: 论文的核心命题在本项目数据上不成立 —— 没有拐点, 越长越好。</b></p>
+
+<p>机制解释: 论文的拐点前提是「信号短期被消化完、之后只剩噪声」。**本项目的信号在</p>
+<p>60 日远未饱和** —— <code>output/ic_report.csv</code> 显示 <code>ens_20</code>→0.0419 / <code>ens_40</code>→0.0726 /</p>
+<p><code>ens_60</code>→<b>0.0924</b>, IC 随期限<b>单调上升</b>; 跨期限(OOS 面板现成模型, 异口径参考)</p>
+<p><code>mlp_20</code> +0.0571 / <code>mlp_40</code> +0.0780 / <code>mlp_60</code> +0.0858, 同样单调。⇒ 「拖长只剩噪声」</p>
+<p>那个区域在本数据上<b>不存在</b>。</p>
+
+<p>⚠ 值得注意的<b>方向性反证</b>: 按论文自己的推导, 市场越高效、拐点越靠前。本项目池子</p>
+<p>是<b>美股 ≥$10B 大市值</b>(定价效率高于中证500)⇒ 预期拐点更早, 实测却是「越长越好」,</p>
+<p><b>与论文方向相反</b>。</p>
+
+<p><b>边界</b>: ①只试了 {20,40,60} 三档 —— <code>model.LABELS</code> 只有这三档</p>
+<p>(<code>HORIZONS=[20,40,60]</code>, 造新标签要动 <code>features.py</code> 重算全史)⇒ 只能否证「现有三档里</p>
+<p>有更好的」, <b>不能否证「某个精细期限更好」</b>; ②未实现论文的完整双层优化(外循环权重</p>
+<p>学习 / 熵正则 / 预热阶段), 那是方法论复现不是判据; ③只测排序层 IC, 未落组合层</p>
+<p>(祖训 2: IC 不衡量赚钱能力)—— 但短标签在 IC 上就 t=−7.70, 组合层翻盘可能性极低。</p>
+
+<p><b>唯一可能有用的部分(当前不适用, 留档)</b>: 论文的<b>预热阶段</b>警告 —— 不能在随机</p>
+<p>初始化时直接开双层优化, 否则模型捷径学习「离决策点最近的短期波动」, 权重全部坍缩</p>
+<p>到最早几分钟; 必须先用平均标签预热。这是通用训练陷阱, 若将来做多期限监督需避开。</p>
+<p>当前生产只训单一标签, 用不上。</p>
+
+<h3>③ 附带修复: 上界探针的「量具自检」实际在检测市场状态(<b>唯一动生产代码处</b>)</h3>
+
+<p><b>这才是上面两个实验路上踩到的真问题, 且影响所有未来的上界测试。</b></p>
+
+<p><code>src/upper_bound_probe.py</code> 有两条会漂的量: <code>IC_REF_MIN = 0.05</code>(参照系下限)与</p>
+<p><code>oos_cut()</code>(数据驱动的折6起点)。前者<b>只在 2025-11-19 窗口上标定过</b>, 后者会随</p>
+<p><code>oos_earnings</code> 延伸前移。<b>两者失配 ⇒ 假「量具坏了」。</b></p>
+
+<p>实测对照(同一份 dataset、同一 <code>--extra vol_20</code>, 只换切点):</p>
+
+<table>
+<tr><td>切点</td><td>base IC</td><td>探针判定</td></tr>
+<tr><td>2026-03-28(<code>oos_cut()</code> 现值)</td><td><b>+0.0382</b></td><td>🔴 量具坏了 rc=3</td></tr>
+<tr><td>2025-11-19(标定窗口)</td><td><b>+0.1046</b></td><td>正常(与 LSM 先例 +0.1018 同量级)</td></tr>
+</table>
+
+<p>⇒ 那个「量具自检」<b>实际变成了市场状态检测</b>: 测试窗落进 AGENTS.md 记录的 IC 走弱段</p>
+<p>(2026-05+ oos ens IC 跌到 +0.019)就报「工具坏了」。<b>这是模式五十六的反面</b> ——</p>
+<p>收紧型判据被市场噪声触发 ⇒ 任何新模型族提案都会被判死刑, 而理由是假的。</p>
+
+<p><b>修法</b>(三处, 全部只影响探针自身, 不影响任何生产路径):</p>
+<li>新增 <code>PROBE_CUT = "2025-11-19"</code> 常量, <code>run_probe</code> 与 <code>main</code> 的<b>默认切点</b>改成它,</li>
+<p>   不再走 <code>oos_cut()</code>。写死是刻意的: 参照系与切点必须<b>成对</b>固定, 各自漂就没意义。</p>
+<li><code>IC_REF_MIN</code> 的 docstring 写明它<b>只在 <code>PROBE_CUT</code> 上标定</b>, 并附上对照数字。</li>
+<li>新增 <code>--ic-ref-min</code>; 显式换 <code>--cut</code> 而不重标定时<b>必须打印告警</b>(实测已验证:</li>
+<p>   告警出现 + 仍拒绝出结论, 把「弱窗口」与「量具坏」显式分开)。</p>
+
+<p>⚠ 实现坑(已锁测试): <code>verdict_from_series(..., ic_ref_min=IC_REF_MIN)</code> 的**默认参数在</p>
+<p>函数定义时就绑定<b>了 0.05 ⇒ 在 <code>main()</code> 里重绑模块级 <code>IC_REF_MIN</code> </b>对它无效**,</p>
+<p><code>--ic-ref-min</code> 会形同虚设。必须<b>透传</b> <code>run_probe → verdict_from_series</code>。</p>
+
+<p><b>回归</b>: <code>tests/features/test_upper_bound_probe.py</code> 20 例(原 15 + 新 5), 全部经</p>
+<p><b>变异测试</b>验证: ①把默认切点改回 <code>oos_cut()</code> → 1 红;</p>
+<p>②去掉 <code>ic_ref_min</code> 透传 → 1 红。</p>
+
+<h3>产物</h3>
+
+<li><code>scripts/raven_upper_bound_2026-09-28.py</code> → <code>output/raven_upper_bound_2026-09-28.{md,json}</code></li>
+<li><code>scripts/label_horizon_paradox_2026-09-28.py</code> → <code>output/label_horizon_paradox_2026-09-28.{md,json}</code></li>
+<li><code>src/upper_bound_probe.py</code>(仅探针) + <code>tests/features/test_upper_bound_probe.py</code></li>
+
+<h3>顺带记一条工程教训(我自己犯的, 已修)</h3>
+
+<p>写 RAVEN 脚本时把「探针因缺列 rc=2 退出」误报成了「量具坏了」—— 因为 <code>run_probe</code></p>
+<p>把 rc≠0 + 空 stdout 一路带回主流程, 解析出全 <code>nan</code>, 而判读层只检查</p>
+<p><code>ic_base &lt; IC_REF_MIN</code> ⇒ 打印出量具坏的结论。**「工具没跑起来」与「量具坏了」是两个</p>
+<p>完全不同的结论, 混起来会误导决策**(模式五十六的同款)。修法: 探针 rc≠0 或输出解析</p>
+<p>不出字段<b>直接抛错</b>, 不许返回空结果往下传。</p>
+
+<hr>
+
+<h2>决策三十五 —— 外部方法五篇的处置: 一项落地 / 三项已有或无数据 / 一项实测后否决(2026-09-28)</h2>
+
+<p>五篇外部材料(QuantML 公众号 + 保德信/Two Sigma 访谈 + 论文)全部逐篇核过<b>数据可得性</b></p>
+<p>与<b>既有结论</b>。<b>只有一项真正落地</b>, 且不涉及任何生产参数变更。</p>
+
+<table>
+<tr><td>#</td><td>材料</td><td>处置</td><td>依据</td></tr>
+<tr><td>1</td><td>Regime-Aware Multiaxial Signal Meta-Layer(Tensor)</td><td><b>已有, 不重做</b></td><td>我们做过更宽的版本并<b>否决</b>了(见下)</td></tr>
+<tr><td>2</td><td>一致预期策略(Original QuantML)</td><td><b>数据缺失</b></td><td>无 analyst consensus 数据; 方法论已有</td></tr>
+<tr><td>3</td><td>PGIM 基本面因子(保德信 Mintz)</td><td><b>一项落地</b> + 一项否决</td><td>见 ① ②</td></tr>
+<tr><td>4</td><td>M3 微观结构生成模型</td><td><b>不适用</b></td><td>无 tick / 无盘口 / 无日内数据</td></tr>
+<tr><td>5</td><td>Two Sigma 特征工程</td><td><b>已全部具备</b></td><td>见下</td></tr>
+</table>
+
+<h3>① 落地: PGIM「压力年一致性」判据(唯一动的生产代码)</h3>
+
+<p><b>判据</b>: 保德信 Stacie Mintz(Flirting with Models)—— 2020 疫情是百年一遇的宏观</p>
+<p>剧震, 对任何立足真实逻辑的因子, 在那种极端环境下<b>承受一定回撤是正常的</b>;「如果一个</p>
+<p>因子在 2020 年不仅没有回撤、反而完美, 那只能说明它大概率对那段特定历史过度拟合」。</p>
+<p>他们宁愿看一个在压力期有合理回撤、逻辑透明的因子, 也不敢信每年都完美向上的黑盒。</p>
+
+<p><b>为什么它是过拟合探针</b>: 若模型在<b>最难的一年</b>也能跑出与平常一样好的风险调整后</p>
+<p>表现, 只有两种解释 —— ①真有能力在极端市况下稳定选股(罕见, 需强证据); ②它对这段历史</p>
+<p>过拟合, 于是压力期也「记得答案」, 而<b>样本外不该记得</b>。②更可能, 尤其压力年样本极少时。</p>
+
+<p><b>⚠ 一处诚实的替代(必须写明)</b>: 论文锚点是 <b>2020</b>, 但本项目 <b>OOS 面板从 2021 起</b></p>
+<p>(实测 <code>oos_earnings.parquet</code> 在 2019/2020 均为 0 行), <code>champion_equity.csv</code> 同样从</p>
+<p>2021-08 起 ⇒ <b>拿不到 2020 的样本外组合表现</b>。故判据落在<b>压力年 = 2022</b>, 那是覆盖期内</p>
+<p>唯一的熊市(等权 −10.77% / 年内 MDD −20.33%; 对照 2020 的等权 +25.75% / MDD −37.34%,</p>
+<p>同为「先崩后涨」的剧震形态)。<b>是同类市场状态的替代, 不是同一年份。</b></p>
+
+<p><b>落地</b>: <code>src/survival_stress.py</code> 新增 <code>STRESS_YEAR = 2022</code> + <code>stress_year_consistency()</code>,</p>
+<p>接入报告 ②-bis 段与 <code>survival_summary.json:stress_year_check</code>。</p>
+
+<p><b>实测结果(生产模型 ens_60)</b>:</p>
+
+<table>
+<tr><td>口径</td><td>天数</td><td>rank-IC</td></tr>
+<tr><td>压力年 2022</td><td>251</td><td><b>+0.0072</b></td></tr>
+<tr><td>平常年(其余)</td><td>971</td><td>+0.1128</td></tr>
+<tr><td><b>保留度</b>(压力/平常)</td><td>—</td><td><b>+0.06</b></td></tr>
+</table>
+
+<p><b>判读: 压力年几乎完全失效 ⇒ 符合「真实因子在压力期会受损」的预期, 不构成过拟合红旗。</b></p>
+<p>(与 AGENTS.md 既有结论一致: 熊市 IC +0.139 &gt; 牛市 +0.074 是<b>按市场状态</b>分层的结论,</p>
+<p>与本条按<b>年份</b>分层的结论不矛盾 —— 前者说「熊市里也能排序」, 后者说「2022 那个熊市里</p>
+<p>几乎排不动」; 两者粒度不同, 都成立。)</p>
+
+<p><b>边界</b>: ①函数<b>只报事实不下过拟合结论</b> —— <code>too_good_in_stress</code> 是「值得追问」而非</p>
+<p>「已判定」(模式五十六: 判据给证据, 不给结论); ②本条是<b>排序层 IC</b>, 不是组合层 Sharpe</p>
+<p>/ MDD —— PGIM 讲的是回撤, IC 只是代理指标; ③单年样本(251 个样本外日)不足以支撑</p>
+<p>「模型在压力市况到底行不行」的强结论, 只够判「有没有过拟合红旗」。</p>
+
+<h3>② 否决: PGIM「信息动量」(只测事件窗口替代全期动量)—— <b>对照组样本不足, 不可测</b></h3>
+
+<p><b>主张</b>: 坚决剔除传统 12-1 价格动量(混杂行业轮动/投机情绪/流动性噪音, 且伴随动量崩塌</p>
+<p>风险), 改用<b>信息动量</b> —— 只追踪财报发布/盈利预测修正等<b>基本面事件前后</b>的价格反应</p>
+<p>窗口, 剥离无事件期的日常波动。实盘下行风险<b>减少近一半</b>。</p>
+
+<p><b>这条理论对我们有吸引力</b>: AGENTS.md 已记 <b>本样本 20/60 日动量 IC 为负</b>(2021-2026</p>
+<p>大市值均值回归), 简单动量在本池子基本无效 ⇒ 用事件窗口替代<b>是合理的下一步</b>。</p>
+
+<p><b>数据可行(实测)</b>: <code>data/fundamentals_cache/*.json</code> 有 <code>earnings_dates</code> 字段, <b>1247 个标的</b>、</p>
+<p>中位 <b>66 个</b>历史财报日、回溯至 <b>2001-2002</b>、每年 4 次(规整, 符合美股季报节奏)。</p>
+<p>与 <code>panel</code> 合并即可构造因子, 零获取成本。</p>
+
+<p><b>⚠ 但预检判它不可测(实测, 零成本预检)</b>: 用交易日口径圈「财报窗」, 1222 个样本外日里</p>
+<p><b>T-1~T 占 1124 天、T+1~T+5 占 1200 天</b> ⇒ 剩余对照组仅 <b>98 / 22 天</b>。</p>
+<p>原因是<b>持有期 60 日 + 季度财报</b> ⇒ 四分之一的年份就有一次财报, 任何财报窗都装不下对照组。</p>
+<p>剩下 22 天 vs 1200 天的 IC 差异(IC +0.1172 vs +0.0906)属<b>噪声量级, 不是统计显著</b></p>
+<p>⇒ <b>否证「可测」, 而非否证「无效」</b>。别拿这个当「信息动量没用」的证据。</p>
+
+<p><b>若将来要测, 换个形式</b>: 不做「事件窗 vs 非事件窗」的对照, 改做<b>特征工程</b> —— 给 60 日</p>
+<p>收益路径按「距最近财报日」分段, 看事件段的信号强度是否显著不同(不需要切分对照组)。</p>
+
+<h3>③ 三项「已有 / 无数据」的判定依据</h3>
+
+<p><b>① regime 元层 = 已有且已否决</b>: 它主张「信号无条件收益近零 ≠ 无价值, 收益集中于少数</p>
+<p>状态」⇒ 用状态门控(Gate)改善每笔收益。我们做过<b>更宽的版本</b>(宽度门控)并已否决:</p>
+<p><code>breadth_stock_test.py</code> 折6 <b>全部输给基线</b>(0.3: 2.74 / 0.4: 2.64 / 0.5: 2.78 vs</p>
+<p>基线 3.06), 全窗只拿 19-37% 累计换 2-3pp 回撤; 且 <code>breadth_value.py</code> 独立验证「宽度低</p>
+<p>≠ 看空反而超卖反弹」(宽度&lt;40% 后未来 20 日等权收益<b>高于</b>无条件)。</p>
+<p>⚠ 一处<b>真实差异</b>: 它是 <b>Gate(拒绝入场)</b>, 我们试的是<b>降半仓</b>; 且它有 <b>ghost stream</b></p>
+<p>检验(被门控拒绝的交易单独建账, 验证「是否真排除了坏交易」而非随机缩小样本)—— <b>我们没有</b></p>
+<p>这个检验。但门控本身既已否决, 该检验对当前决策无增量。<b>不重复实验。</b></p>
+
+<p><b>② 一致预期 = 数据缺失</b>: 无 analyst consensus 数据(<code>fundamentals_cache</code> 是财报不是预测)。</p>
+<p>方法论侧我们<b>已具备</b>其三项核心: 负向剪枝+归档(<code>feature_candidates.json</code> 状态机 +</p>
+<p>AGENTS 特征否决登记)、中性化识别伪因子(DM 风格基准)、事件层≠组合层的分离(祖训 2)。</p>
+<p>唯一缺口是<b>交易约束前置</b>(涨停无法买入/流动性/VWAP)—— 属执行层, 本条不动。</p>
+
+<p><b>④ M3 = 数据不存在</b>: 300 亿逐笔订单 + 盘口前缀化 + 向量量化, 需要 tick/盘口/日内数据。</p>
+<p>本项目<b>只有日线 OHLCV</b>, 尺度差 3-4 个数量级。不是「不划算」, 是<b>数据不存在</b>。</p>
+
+<p><b>⑤ Two Sigma = 已全部具备</b>: 「共线性是信号的死敌」⇒ 本仓准入协议(祖训铁律 + 9 起点复核</p>
+<p>+ 打乱对照 + 竞技场双窗口)比它更严; 「做十个 90 分胜过一个 95 分」⇒ 并行 20+ 变体的竞技场。</p>
+<p>唯一<b>新增的警告</b>是「警惕 AI 降低输出熵导致策略同质化」—— 对我们的意义: 刚否决的 RAVEN</p>
+<p>与标签期限<b>都走同一探针、同一协议</b>, 若所有提案都走同一条流水线, 它们看到的都是同一类</p>
+<p>信号。<b>留档, 作为将来设计「多样性检验」时的提醒。</b></p>
+
+<h3>产物</h3>
+
+<li><code>src/survival_stress.py</code>(新增 <code>STRESS_YEAR</code> + <code>stress_year_consistency</code> + 报告 ②-bis)</li>
+<li><code>tests/features/test_survival_stress_pgim.py</code> <b>7 例</b>, 经<b>变异测试</b>验证: ①<code>STRESS_YEAR</code></li>
+<p>  改回 2020 → 1 红; ②判不出时不再返回 <code>available=False</code> → 1 红。</p>
+
+<h3>一条工程教训(夹具, 值得记)</h3>
+
+<p>给判据写测试时, 连续<b>三次</b>把测试夹具做错 —— 都在「用纸面数学造 Spearman 秩相关」上翻车:</p>
+<p>①<code>label = pred·1.0 + k·0.001</code> ⇒ Spearman 对<b>单调</b>不变 ⇒ 恒 1.0; ②「循环平移 shift」</p>
+<p>⇒ 实测与目标<b>反向</b>(目标 0.1 得 1.0); ③「最低 nconc 个配最高 pred」⇒ 可达 ρ 有下限</p>
+<p>≈0.27, <b>覆盖不到真实量级</b>(2022 年 IC 仅 0.0072、测试要造的 0.02~0.20 全在盲区里)。</p>
+<p>⇒ 最终改用<b>随机置换 + 就近取用 + 量化键缓存</b>, 并在测试里留 <code>_ic_of()</code> 自检夹具是否失真。</p>
+<p>教训: <b>别在测试里手工构造统计量</b> —— 要么注入被比较的量, 要么用「随机搜索 + 标定」。</p>
+<p>同时 <code>spearmanr(a[None,:], batch, axis=1)</code> 会返回 <b>(513,513) 矩阵</b>而非向量(实测踩过,</p>
+<p>索引直接越界) ⇒ 批量算秩相关必须自己从秩算 Pearson。</p>
+
+
+<hr>
+
+<h2>决策三十六 —— 止盈目标系数 0.8→1.0 的静默变更: <b>回滚</b>(2026-10-01)</h2>
+
+<h3>事件</h3>
+
+<p>2026-09-30 有人在未走流程的情况下把生产参数 <code>个股层风控.止盈目标系数</code> 从</p>
+<p><b>0.8 改成 1.0</b>(<code>champion_config.py</code>), 并连带把 <code>signals.take_profit_frac</code></p>
+<p>的兜底值也改成 1.0。<b>漏改第三处</b> —— <code>track_portfolio.load_reminder_config</code></p>
+<p>的 <code>tp_frac</code> 兜底仍是 0.8。</p>
+
+<p>代码审查发现时, 四处已不一致:</p>
+
+<table>
+<tr><td>位置</td><td>值</td><td>问题</td></tr>
+<tr><td><code>champion_config.py</code> 生产值</td><td>1.0</td><td>未跑双窗口、无 decision-log</td></tr>
+<tr><td><code>signals.py</code> 兜底</td><td>1.0</td><td>已跟随</td></tr>
+<tr><td><code>track_portfolio.py:121</code> 兜底</td><td><b>0.8</b></td><td><b>漏改</b> ⇒ 配置读失败时两套口径</td></tr>
+<tr><td><code>champion_config.py</code> 说明文字</td><td>写着 "0.8 为免波动点"</td><td>配置页自相矛盾</td></tr>
+<tr><td><code>signal_archive.py:458</code> note</td><td>写着 "默认 0.8"</td><td>陈旧</td></tr>
+</table>
+
+<h3>为什么这是阻塞级(而不只是"文案不一致")</h3>
+
+<p>项目约定(模式廿二)是「<b>兜底值必须恰好等于当前生产值</b>」—— 配置读不出来时</p>
+<p>看起来一切正常, 实际按另一个数在算。而这个系数决定:</p>
+
+<li><code>signals</code> 的 <code>target</code> 列(日报/持仓/交易计划的核心展示列);</li>
+<li>持仓提醒的「接近目标(≥0.9×目标)」「达到目标」两条触发线。</li>
+
+<p>⇒ 漏改的那一处会让 <b>signals 按 1.0 算目标价、持仓提醒按 0.8 判触发</b>,</p>
+<p>两套口径并存, 而 stdout 无任何异常。</p>
+
+<h3>裁决: 先复测再定, 不靠"文档说 0.8 对"</h3>
+
+<p><code>peak_tp_backtest.py</code> 的 <code>FRACS</code> 只硬编码了 <code>(0.6, 0.8)</code> —— <b>1.0 从未被测过</b>,</p>
+<p>所以"文档说 0.8 是双窗口验证过的"只是间接证据。新增</p>
+<p><code>scripts/tp_frac_decision_2026-10-01.py</code>: <b>同一份 OOS 样本、同一套卖出口径</b></p>
+<p>(<code>tp = frac × clip(p_high_60,0,1)</code>, 触及则卖在 tp 否则持有到第 60 天终点),</p>
+<p>只换 <code>frac</code>, 加测 1.0 档, 双窗口(全窗 1,407,448 条 2021-08-02→2026-05-29 /</p>
+<p>折6 起点 2025-11-28):</p>
+
+<table>
+<tr><td>系数</td><td>均值</td><td>中位</td><td>波动</td><td>触发率</td><td>跑赢死拿</td></tr>
+<tr><td>死拿 60 天</td><td>+5.7%</td><td>+2.7%</td><td>22.3%</td><td>—</td><td>—</td></tr>
+<tr><td>0.6</td><td>+2.9%</td><td>+5.4%</td><td>11.1%</td><td>66.8%</td><td>29.3%</td></tr>
+<tr><td><b>0.8</b></td><td>+3.5%</td><td>+6.3%</td><td><b>12.2%</b></td><td><b>56.0%</b></td><td>25.3%</td></tr>
+<tr><td>1.0</td><td>+4.0%</td><td>+6.0%</td><td>13.3%</td><td>46.3%</td><td>21.5%</td></tr>
+</table>
+
+<p><b>1.0 vs 0.8(双窗口方向一致)</b>: 均值 +0.33 / +0.49pp、波动 +1.15 / +1.33pp、</p>
+<p>触发率 <b>−9.9 / −9.7pp</b>。</p>
+
+<h3>关键判读:「均值上升」是构造性混淆, 不是止盈变好</h3>
+
+<p>系数越大 ⇒ 目标价越远 ⇒ 越难触及 ⇒ 该笔越接近<b>死拿</b>; 而死拿均值本身就最高</p>
+<p>(+5.7%)。实测正是这个单调关系: <b>死拿 +5.7% &gt; k=1.0 +4.0% &gt; k=0.8 +3.5%</b>。</p>
+<p>⇒ 「1.0 均值更高」只说明<b>止盈做得更少</b>, 不说明止盈策略更优。若照字面选</p>
+<p>"均值最高的一档", 会一路选到"不做止盈" —— 这个指标在跨系数比较时<b>没有方向性</b>。</p>
+
+<h3>回滚理由(三条, 均有实测支撑)</h3>
+
+<li><b>免波动收益被吃掉</b>: 0.8 的波动 12.2% 是它被选中的<b>唯一</b>理由</li>
+<p>   (「免波动点」); 改 1.0 后升到 13.3%, 向死拿的 22.3% 靠拢。</p>
+<li><b>触发率掉 9~10pp</b>(双窗口一致): 「接近/达到目标」提醒更少触发 ⇒</li>
+<p>   目标价作为用户下单参考的<b>信息量下降</b>, 而它不影响任何执行。</p>
+<li><b>变更本身未走流程</b>: 无 decision-log、当次未跑双窗口; 而 AGENTS.md 记录的</li>
+<p>   0.8 依据是「双窗口验证 0.8 优于 0.6」。</p>
+
+<p><b>顺带的独立互证</b>: 本次实测触发率 k=0.8 <b>56.0%</b> / k=1.0 <b>46.3%</b>, 与</p>
+<p>AGENTS.md 早已记的「k=0.8→55%, k=1.0→45%」<b>几乎逐字吻合</b> ⇒ 那个结论站得住,</p>
+<p>新测是复核而非推翻。</p>
+
+<h3>影响面</h3>
+
+<p>该系数<b>只影响展示与提醒</b>, 不参与执行 —— 生产个股退出 = 60 周期满自然卖出</p>
+<p>(见「预测高点止盈是拟合, 转不成样本外收益」)。但它直接决定用户看到的 <code>target</code></p>
+<p>与两条提醒触发线 ⇒ 属<b>用户可见口径</b>, 不是内部参数。</p>
+
+<h3>防复发(机制, 不只是改回一个数)</h3>
+
+<p>它是<b>同一个数的三个副本</b>, 漏改一处就两套口径:</p>
+
+<li><code>champion_config.CHAMPION_CONFIG</code> 生产值(落进 <code>data/champion_config.json</code>);</li>
+<li><code>signals.TP_FRAC_FALLBACK</code>(本次由字面量<b>提成具名常量</b>);</li>
+<li><code>track_portfolio.load_reminder_config</code> 的 <code>defaults["tp_frac"]</code>。</li>
+
+<p>新增 <code>tests/ops/test_tp_frac_fallbacks_agree.py</code> <b>4 例</b>: 三方逐值断言 +</p>
+<p>磁盘配置 vs 源码生产值 + 回滚值守住。<b>变异测试已验证</b>: 把生产值改回 1.0 而</p>
+<p>漏改第三处 → 3 例红, 报错信息直接指出「持仓提醒按 0.8 判接近目标而 signals</p>
+<p>按 1.0 算目标价」。</p>
+
+<p><b>铁律(写进 AGENTS.md)</b>: 改该值必须同时改三副本 + 写 decision-log;</p>
+<p>新增同类"一处生产 + N 处兜底"的参数时, 兜底一律提成具名常量并加三方断言。</p>
+
+<h3>产物</h3>
+
+<li><code>scripts/tp_frac_decision_2026-10-01.py</code> + <code>output/tp_frac_decision_2026-10-01.md</code></li>
+<li><code>tests/ops/test_tp_frac_fallbacks_agree.py</code> <b>4 例</b>(变异测试验证)</li>
+<li><code>champion_config.py</code> / <code>signals.py</code> / <code>track_portfolio.py</code> / <code>signal_archive.py</code></li>
+<p>  四处口径统一回 0.8; AGENTS.md 补复测记录与铁律</p>
+
+<h2>决策三十七 —— 行业集中度约束(权重侧封顶)双窗口<b>否决</b>, 不接线; 顺带修掉报告的量具缺陷(2026-10-01)</h2>
+
+<h3>触发</h3>
+
+<p>用户看了一篇 quant 方法论科普(PCA 剥共同因子 → 残差 alpha), 问「对我的项目有没有</p>
+<p>帮助」。逐条核对后 8 条里 7 条项目已有且更严(PCA ≡ multiOLS 同投影子空间已实测、</p>
+<p>残差 IC/9 起点/打乱对照/尾部风险全在做), 唯一有动作含义的是第 1 条「你的持仓其实是</p>
+<p>同一个 beta 押注」⇒ 落到本项目已诊断出但<b>没上药</b>的一处: <code>exec_constraints</code> 的</p>
+<p>行业封顶(2026-09-28 实测袖袋权重 Industrials 占 50%)。</p>
+
+<p>⚠ <b>先更正一处误判</b>: 我最初判断「权重后封顶是唯一<b>未测</b>口径」。<b>错的</b> ——</p>
+<p><code>scripts/sleeve_sector_cap_test_2026-09-29.py</code>(commit <code>bcda14d</code>)已跑过, verdict=reject。</p>
+<p><b>教训</b>: 提「未测」之前必须先搜仓库, 而不是凭印象(AGENTS.md 里这类脚本有几十个)。</p>
+
+<h3>双窗口结果(2026-10-01 复跑, 生产口径 3袋×K20 裸基座)</h3>
+
+<table>
+<tr><td>臂</td><td>全窗 S</td><td>折6 S</td><td>Δ全窗</td><td>Δ折6</td><td>9起点</td><td>top1 名单 → 权重后</td></tr>
+<tr><td>基线(无约束)</td><td>1.568</td><td>3.040</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td>权重侧 ≤40%</td><td>1.562</td><td>2.810</td><td>−0.006</td><td>−0.230</td><td>0/5</td><td>0.367 → 0.336</td></tr>
+<tr><td>权重侧 ≤30%</td><td>1.553</td><td>2.559</td><td>−0.015</td><td>−0.481</td><td>1/5</td><td>0.367 → 0.292</td></tr>
+<tr><td>选股侧 cap=8</td><td>1.552</td><td>2.787</td><td>−0.016</td><td>−0.253</td><td>0/5</td><td>0.336 → 0.336</td></tr>
+<tr><td>选股侧 cap=6</td><td>1.539</td><td>2.496</td><td>−0.029</td><td>−0.544</td><td>0/5</td><td>0.291 → 0.291</td></tr>
+<tr><td>选股侧 cap=5</td><td>1.549</td><td>2.398</td><td>−0.019</td><td>−0.642</td><td>0/5</td><td>0.250 → 0.250</td></tr>
+</table>
+
+<p><b>判定: 不接线。</b> 依据是项目铁律(双窗口 <b>与</b> 9 起点, 两者都要过):</p>
+
+<li><b>选股侧(改名单)全败且逐档单调劣化</b>(折6 −0.253 → −0.544 → −0.642)。机制清楚:</li>
+<p>  分数最高的一批天然同行业, 强制换人等于<b>主动换掉 alpha</b>。</p>
+<li><b>权重侧双窗口 Δ 全负</b>; 且 <b>9 起点从首跑的 4/5 塌到 0/5</b> —— 因为</li>
+<p>  <code>oos_earnings</code> 末日从 08-28 推到 09-30 ⇒ 折6 起点前移 ⇒ 正向 offset 的 4 个窗口</p>
+<p>  不足 126 天被筛掉, 只剩 5 个。⚠ <b>首跑那 4/5(平均Δ +0.026/+0.058)不能再引用</b>。</p>
+<li>前视审计全部 |Δ| &lt; 0.1 ✓(约束本身不引入前视)。</li>
+
+<p><b>这是该方向的第三次独立否决</b>, 与 <code>rotation.py</code>(行业约束拖累选股 0.82 vs 1.17)、</p>
+<p><code>ls_sector_overlay</code>(五臂双窗口全 ❌)同向。<code>exec_constraints</code> 保持<b>研究隔离</b></p>
+<p>(其 docstring 与 <code>tests/model/test_exec_constraints.py::test_not_wired_into_any_production_call_site</code></p>
+<p>已锁「无任何生产调用点」, 本次不动)。</p>
+
+<p>⚠ 结论是「<b>在当前数据上无净收益</b>」, <b>不是</b>「集中度不重要」: 约束<b>确实压住了</b></p>
+<p>集中度(top1 0.367 → 0.336 / 0.292, 无解率 0/65), 只是压集中度的代价 ≥ 收益。</p>
+
+<h3>顺带修掉的量具缺陷(本次真正的产出)</h3>
+
+<p>首跑报告里权重侧 ≤40% 与 ≤30% 的 <code>top1_sector_mean</code> <b>完全相同(0.3669)</b>, 看着像</p>
+<p>「约束没生效」。实测约束<b>是生效的</b>(→ 0.3362 / 0.2915)。根因: <code>sector_stats</code></p>
+<p>只统计<b>名单等权占比</b>, 而权重侧<b>不改名单、只改权重</b> ⇒ 两档必然相同。</p>
+<p>⇒ 那一列答的不是「封顶后还剩多少集中度」, 而是「封顶<b>前</b>名单有多集中」。</p>
+<p><b>留在产物里就是给后人埋雷</b>(会据此以为约束无效、或以为两档没区别)。</p>
+
+<p>修法: <code>simulate_capped</code> 收集<b>实际应用权重</b>(<code>wcollect</code>, 在 <code>continue</code> 之后收集以免</p>
+<p>与名单长度错位), <code>sector_stats</code> 新增 <code>top1_weighted_*</code> 列。⚠ 选股侧/基线走等权、</p>
+<p>没有「应用权重」这回事 ⇒ <b>不造</b>那一列(拿等权冒充会把「没有权重调整」说成</p>
+<p>「有权重调整」, 与本缺陷同类)。</p>
+
+<p><b>verdict 未因修量具而翻转</b>(收益侧一直是真算的, Δ 全负)。</p>
+
+<h3>两条工程教训(都是本轮真踩的)</h3>
+
+<li><b>变异体必须逐字对应它声称要防的坏实现</b>(模式五十八/一百〇八)。第一版变异体写成</li>
+<p>   <code>out["x"] = out.pop(...) or out["y"] = ...</code> ⇒ <b>语法非法</b>, 变异体自己先崩;</p>
+<p>   改成「只删两行赋值」又留下空 <code>if</code> 体 ⇒ <code>IndentationError</code>, 同样测不到东西。</p>
+<p>   最终删<b>整个 <code>if wt:</code> 块</b>。⚠ 关键验证: 手工把该块从源码删掉后, **核心锁</p>
+<p>   <code>test_name_caliber_and_weighted_caliber_are_reported_separately</code> 确实变红**</p>
+<p>   —— 这才是「锁有效」的证据; 变异测试自己红不算。</p>
+<li><b>测试夹具的档位必须数学可解</b>。我最初取 3 行业 / 上限 0.30, 而再分配只把额度</li>
+<p>   摊给未封顶行业 ⇒ <code>上限 × 行业数 &lt; 1</code> 时<b>必然无解抛错</b>。这不是 bug 是约束的</p>
+<p>   固有性质(3 行业 ⇒ 上限须 &gt; 1/3), 但它直接暴露了生产接线的一个前置问题(见下)。</p>
+
+<h3>⚠ 若将来接线, 前置条件(未做)</h3>
+
+<p><code>cap_sector_weights</code> 在数学无解时<b>直接抛 <code>ValueError</code></b>(如名单只有 2 个行业且各占</p>
+<p>50% 而上限 40%: 50+50=100%, 两行业都 ≤40% 最多占 80%)。回测里 <code>_cap_or_equal</code></p>
+<p>捕获并降级等权(实测 0/65 触发, 平均 6.4 个行业 ⇒ 极少发生), **但生产执行层没有</p>
+<p>这个降级** ⇒ 一次无解就会中断整条链。接线前必须补降级路径(参照 <code>badbar_guard</code></p>
+<p>的处置), 不许让异常冒泡。</p>
+
+<h3>产物</h3>
+
+<li><code>scripts/sleeve_sector_cap_test_2026-09-29.py</code>(docstring 结论表更新为复跑数字 +</li>
+<p>  两处新增说明段; <code>sector_stats</code> 双口径)</p>
+<li><code>tests/research/test_sleeve_sector_cap_stats.py</code> <b>6 例</b>(含变异测试 + 无解抛错锁</li>
+<p>  + 「verdict 仍是 reject」防翻转锁), <code>tests/model/test_exec_constraints.py</code> 17 例</p>
+<li><code>output/sleeve_sector_cap_2026-09-29.json</code>(verdict=reject, 新增 <code>top1_weighted_*</code>)</li>
+
+<h2>决策三十八 —— 外部方法: 日内订单流交易法(Chris Creamer 世界杯冠军)<b>不适用</b>; GEX 判为「不可测, 非无效」(2026-10-01)</h2>
+
+<h3>触发</h3>
+
+<p>用户转来一篇交易方法帖(投机实验室转述): 26 岁交易员 Chris Creamer 拿下 Robbins 世界杯</p>
+<p>月度日内交易赛第一(单月净收益 100.2%), 方法 = **价值区 + GEX 伽马敞口判趋势 →</p>
+<p>斐波那契 0.705/0.786/0.886 折扣区找位置 → 足迹图 delta 吸收确认 → 止损止盈 +</p>
+<p>成交量/时间过滤**, 交易 Micro NQ 期货、5 分钟 K。</p>
+
+<p>按决策三十四/三十五的处置惯例, 先核<b>数据可得性</b>与<b>既有结论</b>, 不先讨论可实现性。</p>
+
+<h3>结论: <b>不适用</b>(三处硬不匹配, 逐条实测)</h3>
+
+<table>
+<tr><td>维度</td><td>该方法</td><td>本项目(实测)</td></tr>
+<tr><td>标的</td><td>Micro NQ 期货</td><td>美股/ETF 日线</td></tr>
+<tr><td>周期</td><td><b>5 分钟 K, 日内</b></td><td>日线, 持有 5–90 交易日</td></tr>
+<tr><td>数据</td><td>足迹图逐价位 delta、价值区、POC</td><td><code>panel.parquet</code> 日线 OHLCV</td></tr>
+<tr><td>决策</td><td>人工看盘逐根判断</td><td>模型横截面排序 <code>ens_60</code></td></tr>
+<tr><td>目标</td><td>固定盈亏比 1.5–2 倍</td><td>60 日爆发段吃波段</td></tr>
+</table>
+
+<li><b>足迹图 delta / 价值区 / POC / 成交量分布: <code>panel.parquet</code> 里不存在。</b> 日线 OHLCV</li>
+<p>   无法还原「每根 K 线每个价位主动买卖多少」⇒ <b>不是精度问题, 是信息不在数据里</b>。</p>
+<p>   (与决策三十五「M3 微观结构: 不适用, 无 tick/盘口/日内数据」同类, 但更极端: 连日内</p>
+<p>   K 线都没有。)</p>
+<li><b>斐波那契: 项目已测过并否决。</b> 他用 0.705/0.786/0.886(OTE 区间), 项目测的是</li>
+<p>   0.382/0.5/0.618 回撤与 1.272/1.618 扩展位 ⇒ <code>champion_stop --fib-exit</code>(条件逃顶)</p>
+<p>   全窗 4.06 / 折6 2.23, ratio 1.82, <b>9 起点 0/9 跑赢 ⇒ 拟合判定稳健</b>;</p>
+<p>   <code>fib_backtest</code>: 触 1.272/1.618 后 20 日<b>相对全市场超额 −2.2pp</b>。</p>
+<p>   ⚠️ 另有一层<b>结构性</b>不匹配(项目文档已记): 他的 0.786 进场区是<b>滚动锚定</b>的</p>
+<p>   (从最近波段低点到高点), 行情一走窗口就移动 ⇒ <code>fib_backtest</code> 明确记着</p>
+<p>   「滚动窗口的扩展位是移动目标, 几乎不会被触到, 回测必须用固定锚点日」。**照搬</p>
+<p>   会得到一个永远不触发的规则。**</p>
+<li><b>GEX: 判「不可测」, 不是判「无效」。</b> 见下。</li>
+
+<h3>GEX 值得单独说: 原料已有, 但三重阻塞(且方向已被同类实验证否)</h3>
+
+<p><code>src/options_features.py</code> 已产出 <code>total_oi</code> / <code>pc_vol_ratio</code> / <code>iv_term</code> / <code>vrp</code>(含 OI),</p>
+<p><code>data/options_daily/</code> 已有 <b>5 天</b>链快照(09-24/09-25/09-29/09-30/10-01)⇒ **GEX 的</p>
+<p>原料在仓**。但:</p>
+
+<li><b>样本 5 天。</b> AGENTS.md 早有铁律: 「攒样本期, **样本 &lt;60 天前这些特征不许进任何</li>
+<p>   生产判定**」。</p>
+<li><b>GEX 需要按行权价建 gamma 曲面</b>做数值积分; 现在 <code>options_features</code> 是**按标的</li>
+<p>   聚合**(iv_atm / pc ratio), 不是按 strike 的 OI+Greeks 分布 ⇒ 缺 GEX 本身的计算基础。</p>
+<li>⚠️ <b>方向已被同类实验证否</b>: 他的 GEX 判的是<b>波动率状态</b>(正伽马压波动、突破易</li>
+<p>   失败; 负伽马放大波动), <b>不含涨跌方向</b>。而项目已实测**指数层面期权时序特征无可交易</p>
+<p>   信号<b>(<code>output/options_data_validation_20260922.md</code>: LGB walk-forward OOS IC </b>−0.11**,</p>
+<p>   打乱对照塌缩到 ~0)⇒ 属「指数层面时序」问题, 与本项目冠军(横截面排序器, 问"哪只</p>
+<p>   涨得多")是<b>两个不同的问题</b>。同决策三十五「信息动量」的纪律: **别把「测不了」</p>
+<p>   归档成「无效」**。</p>
+
+<p>⇒ <b>真正值得等的是 <code>options_daily</code> 攒满 60–90 天后的</b>个股截面<b>期权特征</b>(不是指数</p>
+<p>时序), 这条链路已挂好(<code>src/options_daily.py</code> 每交易日 16:30 ET 自动抓 top300+持仓),</p>
+<p>属<b>攒样本</b>而非新项目。AGENTS.md 已有登记。</p>
+
+<h3>顺带: 那个 100.2% 为什么不能当证据</h3>
+
+<p>单月 + 交易比赛(模拟盘, 非真实资金、非全周期)+ 「胜率 60%+」「最长连赢 31 天」——</p>
+<p>这正是决策三十六之前那篇 quant 科普的第 5 条「小样本是幻觉」: **单月 + 比赛制度</p>
+<p>是最强的样本偏差来源**(参赛者专攻该制度)。项目对此已有免疫:</p>
+<p><code>frozen_forward_tracker</code>(前向退化追踪) / <code>alpha_trade_test</code>(真实交易测试) /</p>
+<p><code>survival_stress</code>(压力年判据)。按项目铁律, 此类提案的处置顺序是**先过</p>
+<p><code>upper_bound_probe</code>(把原始信息塞给强学习器看增量 IC)**, 而不是讨论能不能实现。</p>
+
+<h3>产物</h3>
+
+<li>无代码改动。判读依据: <code>data/options_daily/</code>(5 天快照)、<code>src/options_features.py</code></li>
+<p>  (聚合口径)、<code>output/options_data_validation_20260922.md</code>(指数时序 OOS IC −0.11)、</p>
+<p>  <code>AGENTS.md</code>(fib-exit 0/9 否决 + 选项样本 &lt;60 天禁令 + option_overlay 期权纪律)</p>
+
+<h2>决策三十九 —— 2026-10-01 三件事: 修「执行风险敞口」的<b>度量 bug</b> / 市值重算落盘 / PIT 预演通过(2026-10-01)</h2>
+
+<h3>触发</h3>
+
+<p>用户问「我的系统现在已经完美了吗」。评估后给出三件该做的事(执行跟随暴露目标 /</p>
+<p>市值重算落盘 / PIT 到期准备), 用户全部照做。**三件里有两件在执行中发现了比任务本身</p>
+<p>更重要的问题。**</p>
+
+<h3>① 🔴 <code>real_vs_paper_gap</code> 把 +17.4% 报成 <b>-44%</b> —— 「执行风险敞口」的证据是错的</h3>
+
+<p>这是本轮最重要的发现。该报告被 AGENTS.md 反复引用为「真实账户没按暴露降仓」的唯一</p>
+<p>量化证据(「当前最大执行风险敞口」), 数字是<b>额外回撤 -46.77pp</b>。</p>
+
+<p><b>根因</b>: <code>_load_real</code> 重建真实账户净值时, <code>equity</code> 只由<b>仍在持有的股票市值</b>构成。</p>
+<p>已卖出标的从 <code>sell_date</code> 后消失, 但那笔钱<b>变成了现金却从未被记入</b> ⇒ equity 凭空暴跌。</p>
+
+<p><b>实测事故(报告内部即已自相矛盾)</b>:</p>
+
+<table>
+<tr><td>口径</td><td>值</td></tr>
+<tr><td>引擎 equity 2026-09-29 → 09-30</td><td>87,492 → 62,296 = 单日 <b>-28.8%</b>, nav 0.559, MaxDD <b>-51.4%</b></td></tr>
+<tr><td>报告正文</td><td>窗口 <b>-44.12%</b>, MaxDD -51.39%</td></tr>
+<tr><td><b>报告自己的结论行</b></td><td>「成本 61,988 → 市值 62,297」= <b>+0.5%</b></td></tr>
+<tr><td>账本实况</td><td>当前市值 62,297; 已实现 <b>+16,925</b>(5 笔卖出)</td></tr>
+</table>
+
+<p><b>两个真相同时印在同一份报告上</b>(正文 -44.12% vs 结论 +0.5%)—— 这本身就是</p>
+<p>「量具坏了」的信号: 真相对账时两个数不可能同时成立。</p>
+
+<p><b>修复后</b>: <code>equity = 124,432</code> = 持仓 62,297 + 现金 62,135, <b>账实对平</b>;</p>
+<p>nav <b>1.174(+17.4%)</b>、MaxDD <b>-7.07%</b>。未执行暴露的「额外回撤」从</p>
+<p><b>-46.77pp 更正为 -2.46pp</b> ⇒ 此前<b>方向性夸大了约 19 倍</b>, 且方向性误导</p>
+<p>(实际这次未执行暴露反而多赚 +19.07pp)。</p>
+
+<p>⚠ <b>这笔账的实际教训</b>: 「执行没跟随风控目标」这个结论<b>方向仍然成立</b></p>
+<p>(隐含暴露均值 100% vs 纸面 48%, 约 2.1×), 但<b>量级</b>此前是错的。</p>
+<p><b>一个被引用的数字错了 19 倍, 三个月里没人发现</b> —— 因为它「看起来合理」</p>
+<p>(满仓亏 44% 讲得通)。<b>唯一抓住它的动作是: 把报告结论与账本逐项对平。</b></p>
+<p>⇒ 新增测试 <code>tests/ops/test_real_vs_paper_gap.py</code> <b>6 例</b>(该模块此前<b>零覆盖</b>),</p>
+<p>其中「账实对平」用的正是本次的判据。</p>
+
+<p><b>修复中踩的两个坑(都已写进代码注释)</b>:</p>
+
+<li><b>回款入账日 = 卖出日「次日」</b>。<code>eff</code> 用 <code>px.index &lt;= end_date</code> ⇒ 卖出<b>当日</b>该股</li>
+<p>   仍按收盘价计市值; 若同日再加回款 = 同一笔钱算两次(实测 equity 虚高到 79,222)。</p>
+<li><b>现金必须正向 <code>cash.cumsum()</code></b>。我第一版写成 <code>cash[::-1].cumsum()[::-1]</code></li>
+<p>   (反向累加, 语义<b>正好相反</b>) ⇒ 早先卖出的钱在之后凭空蒸发(末日只得到当日</p>
+<p>   那笔 22,902 而非累计 62,135)。教训: <b>「看起来是阶梯累积」≠「真的是阶梯累积」</b></p>
+<p>   —— 必须用小样本算一遍末日数字, 不能相信变换的名字。</p>
+
+<p>⚠ <b>未修的既有简化(显式记录, 别让后人以为已修)</b>: <code>qty</code> 是<b>按 symbol 覆盖的字典</b>,</p>
+<p>同一 symbol 同时出现在 <code>sales.csv</code> 与 <code>holdings.csv</code> 时后者覆盖前者。真实数据里两者</p>
+<p><b>无重叠</b>(实测 5 笔卖出 vs 6 笔持仓, 交集为空) ⇒ 本次不修(属无请求的抽象),</p>
+<p>但测试里已把这个口径钉住。</p>
+
+<h3>② ✅ 市值重算落盘(892 只候选 / 860 只写 / 32 只拦截)</h3>
+
+<p><code>market_cap_usd</code> 此前是<b>一次性登记值</b>, 不随价格更新 ⇒ 近月大跌的票 <code>log_mc</code></p>
+<p><b>系统性高估</b>、越跌越被推高。本次 <code>--check</code> 确认<b>网络已通</b>(此前 09-29 DNS 不通),</p>
+<p>于是执行 dry-run → <code>--apply</code>。</p>
+
+<li>shares 拉取 <b>892 成功 / 1 失败</b>(DRAM 保持旧值不动);</li>
+<li>区间闸 [0.3, 3.0] + 股数互校: <b>860 只通过可自动写, 32 只拦截</b>入</li>
+<p>  <code>output/market_cap_review.csv</code> 供人工确认;</p>
+<li>落盘<b>行数不变</b>(3,014,635), universe + panel 双备份</li>
+<p>  (<code>*.bak_mcrecomp_20261001-204715</code>);</p>
+<li>AGENTS.md 点名的 4 只全部通过闸且<b>都被修正</b>: INIO 13.78B→<b>13.60B</b>、</li>
+<p>  COHR 57.22B→<b>56.36B</b>、CBRS 21.88B→<b>19.94B</b>、AMKR 13.45B→<b>13.01B</b>。</p>
+
+<p>⚠ <b>拦截的 32 只不要盲目信任新值</b>: 里面有「旧值陈旧」(SMR 12.00B→3.24B, NuScale</p>
+<p>现值确实 ~3.3B ⇒ 旧值错)也有「<b>新值反而错</b>」(UHAL 14.43B→1.17B, yfinance</p>
+<p>sharesOutstanding 少一个量级)。<b>逐只人工确认后才可写</b>, 本次 <code>--apply</code> 未改它们。</p>
+<p>⇒ 处置台账里的「信息动量」纪律同样适用: <b>不把「测不了」归档成「无效」</b>。</p>
+
+<h3>③ ✅ PIT 到期预演通过(rc=0, 无硬问题)</h3>
+
+<p><code>src/pit_enable_dryrun.py</code> ⇒ <b>✅ 无硬问题 / 1 个提醒(闸门关闭 🧊 预期)</b>。</p>
+
+<li>任期进度: <b>第 10/91 天, 距到期 81 天</b>(2026-12-21);</li>
+<li>训练开关 <code>PIT_UNIVERSE</code> 关 / 实时开关 <code>PIT_REALTIME</code> 关(设计要求全程不开);</li>
+<li>数据面 4 件(panel/dataset/oos_earnings/signal_archive)均 <b>0 天前更新</b>;</li>
+<li>工具链 <b>9 项依赖全部在位</b>;</li>
+<li>⚠ 面板口径: dataset/oos/panel <b>建于 PIT 过滤加入前</b> ⇒ 启用时必须按 runbook §2②</li>
+<p>  <b>重建</b>。§4.2 老坑: <b>只开开关不重建 = 口径没变</b>。</p>
+
+<p>⇒ <b>PIT 不需要现在动</b>。它是 12-21 的动作, 且属「有计划的重训」, 受闸门约束。</p>
+<p>预演的作用是确认<b>没有硬阻塞</b>, 已达成。</p>
+
+<h3>回归</h3>
+
+<p><code>tests/ops/</code> + <code>tests/model/</code> <b>2629 passed / 3 skipped</b>(0 失败);</p>
+<p><code>tests/market/</code> + <code>tests/features/</code> <b>356 passed</b>。市值重算动了 <code>panel.parquet</code>,</p>
+<p>两组下游护栏均未破。</p>
+
+<h3>产物</h3>
+
+<li><code>src/real_vs_paper_gap.py</code>(现金记账) + <code>tests/ops/test_real_vs_paper_gap.py</code> <b>6 例</b></li>
+<p>  (变异测试已验证: 去掉 <code>equity + cash.cumsum()</code> ⇒ 3 条变红)</p>
+<li><code>output/real_vs_paper_gap.md</code> / <code>.png</code> 重生成</li>
+<li><code>data/universe.csv</code> + <code>data/panel.parquet</code>(860 只市值; 均带备份)</li>
+<li><code>output/market_cap_review.csv</code>(32 只待人工确认)</li>
+
+<h3>补: MRNA 人工确认放行 —— 把「收紧型闸」开出一个人工通道(2026-10-01 21:00)</h3>
+
+<p><b>触发</b>: 用户独立提供 MRNA 真实市值 <b>716.86 亿</b>, 用于判定 32 只拦截名单里它的方向。</p>
+
+<p><b>三方对拍</b>:</p>
+
+<table>
+<tr><td>口径</td><td>市值</td><td>隐含股数</td></tr>
+<tr><td><b>用户独立核</b></td><td><b>71.69B</b></td><td>372.3M</td></tr>
+<tr><td>yfinance 重算</td><td>76.88B</td><td>399.2M(<b>+7.2%</b>, 正常口径差)</td></tr>
+<tr><td>旧登记值</td><td>25.28B</td><td>131.3M ⇒ 反推当时股价 <b>$64.82</b></td></tr>
+</table>
+
+<p><b>判定: 新值方向正确, 旧值陈旧 2.8 倍。</b> 旧值隐含的 $64.82 恰是 Moderna <b>2022 年</b>的价位 ⇒</p>
+<p>印证「<code>market_cap_usd</code> 是一次性登记值、之后从不更新」这一根因。它越界(比值 3.041 &gt; 3.0)</p>
+<p><b>纯粹因为旧值太旧</b>, 不是新值有问题。</p>
+
+<p><b>落盘</b>: MRNA 25.28B → <b>76.88B</b>, universe + panel 同步, 备份齐全, 行数不变。</p>
+
+<p>#### 机制化: <code>--confirm-new</code> / <code>--confirm-basis</code></p>
+
+<p>原先只有闸(自动 accept / 拦下 review), <b>没有人工通道</b> ⇒ 遇到「越界但已核实」的标的只能</p>
+<p>改代码或手工改 CSV。区间闸是<b>收紧型</b>判据(宁可少改不可写错), 它拦下的是「旧值错」<b>或</b></p>
+<p>「新值错」但<b>判不出哪边错</b> ⇒ 必须留人工通道, 且放行是<b>正确处置</b>而非绕过闸门。</p>
+
+<pre><code>
+.venv/bin/python src/market_cap_recompute.py --apply \
+  --confirm-new MRNA --confirm-basis "用户核 716.86亿; 旧值隐含 $64.82=2022 价位"
+</code></pre>
+
+<p>配套的三条性质(都有测试):</p>
+<li><b>点名不在名单里的 symbol 会出声</b>(不静默忽略)—— 否则「我明明写了 MRNA」与</li>
+<p>   「它压根没进名单」无法区分;</p>
+<li><b>留痕写进 <code>universe.mcap_audit</code></b>(确认时间/旧值/新值/依据)⇒ 一个月后能回答</li>
+<p>   「为什么 32 只里有 1 只越界也写了」;</p>
+<li><b>反向守卫</b>: 没点确认的 review 行<b>绝不写</b>, 旧值保持不动。</li>
+
+<p>#### 本轮修掉的三个真缺陷(都是自己写出来又自己抓到的)</p>
+
+<li><b>名单与实际写入不一致</b>: <code>--confirm-new</code> 只设了 <code>confirm</code> 标记, 而 <code>verdict</code> 改判</li>
+<p>   写在 <code>apply()</code> 里(太晚) ⇒ 渲染区与 review CSV 仍把已放行的行列为「待确认」。</p>
+<p>   ⇒ 改判必须<b>早于</b> <code>render</code> 与 CSV 落盘(模式二: 判据与清单必须同源)。</p>
+<li><b>留痕在幂等重跑时丢失</b>: 留痕挂在 <code>accept_manual</code> 上, 而确认后<b>重跑</b>时该标的已是</li>
+<p>   新值 ⇒ 比值 1.0 ⇒ 走<b>普通 accept</b> ⇒ 留痕分支不触发 ⇒ 记录凭空消失。而「重跑一次</p>
+<p>   看看稳不稳」是最自然的操作 ⇒ <b>记录会在最常见的操作下丢失</b>。</p>
+<p>   ⇒ 判据改为「本轮 <code>--confirm-new</code> 点过它」, 与它现在走哪条闸无关。</p>
+<li><b>一处注释在说谎</b>: 我写过「不加显式建列守卫就会静默失效」。变异测试把该守卫整段删掉,</li>
+<p>   <b>58 个用例全绿</b> ⇒ 那是<b>等价变异</b>(pandas <code>.loc</code> 赋值本就自动建列), 我的注释是错的。</p>
+<p>   ⇒ 已改成如实记录(模式五十九: 变异体没让锁变红时, 先怀疑变异体不忠实/等价)。</p>
+
+<p><b>变异测试</b>: ① 留痕判据退回挂 <code>verdict</code> ⇒ <code>test_audit_survives_idempotent_rerun</code> 变红</p>
+<p>(证明这把锁真的在测); ② 删掉建列守卫 ⇒ 全绿 ⇒ 等价变异, 非缺陷(不据此加锁)。</p>
+
+<p><b>测试</b>: <code>tests/ops/test_market_cap_filter_and_gate.py</code> 55 → <b>58 例</b>(+3 人工放行通道)。</p>
+<p>回归 <code>tests/market/</code> <b>280 passed</b>。</p>
+
+<p>#### 剩余 31 只(未处理, 现状可接受)</p>
+
+<li>🟢 <b>18 只多类别股</b>(GOOGL/GOOG、BRK-A/BRK-B、NWS/NWSA、FOX/FOXA、AGNC、HBAN、APO、</li>
+<p>  MCHP、SMCI、BMNR、BTSG): 各 ticker 的旧值本就按<b>各自类别股数 × 各自类别价格</b>登记 ⇒</p>
+<p>  <b>旧值是对的、新值是错的</b> ⇒ 应保留旧值。判据已充分, 可批量显式化。</p>
+<li>🟡 <b>10 只</b>(UHAL/FWONA/QNT/CET/BNT/ARXS/VG/SYM/SMR/MAIR): 同一种表现, 一边新值错</li>
+<p>  一边旧值错(SMR 已明确是旧值陈旧)⇒ 需逐只核。</p>
+<li>⇒ 31 只占候选 3.5%, 且 <code>log_mc</code> 是横截面<b>排名</b>特征 ⇒ 不处理也不改变池内相对位置</li>
+<p>  趋势。<b>真正不可容忍的是「860 只自动写」里有错值</b>, 那批已过双重互校。</p>
+
+<h3>补②: 10 只「yf 与旧值都错」⇒ 新增 <code>--set-mcap</code> 直接写值通道(2026-10-01 21:06)</h3>
+
+<p><b>触发</b>: 用户独立提供 10 只的真实市值(亿): UHAL 116.97 / FWONA 212.97 / QNT 126.55 /</p>
+<p>CET 19.69 / BNT 130.58 / ARXS 212.79 / VG 316.01 / SYM 254.44 / SMR 33.95 / MAIR 145.59。</p>
+
+<p><b>三方对拍(现价 × 各源股数)</b>:</p>
+
+<table>
+<tr><td>sym</td><td>真实值</td><td>隐含真实股数</td><td>旧登记值</td><td>旧/真实</td><td>yf 股数</td><td>yf 值/真实</td></tr>
+<tr><td>UHAL</td><td>116.97亿</td><td>194.4M</td><td>144.26亿</td><td>1.233</td><td><b>19.4M</b></td><td><b>0.100</b></td></tr>
+<tr><td>FWONA</td><td>212.97亿</td><td>251.6M</td><td>238.95亿</td><td>1.122</td><td>24.0M</td><td>0.095</td></tr>
+<tr><td>QNT</td><td>126.55亿</td><td>263.3M</td><td>165.94亿</td><td>1.311</td><td>39.3M</td><td>0.149</td></tr>
+<tr><td>CET</td><td>19.69亿</td><td>35.5M</td><td>133.50亿</td><td><b>6.780</b></td><td>29.5M</td><td>0.833</td></tr>
+<tr><td>BNT</td><td>130.58亿</td><td>357.6M</td><td>148.15亿</td><td>1.135</td><td>59.9M</td><td>0.168</td></tr>
+<tr><td>ARXS</td><td>212.79亿</td><td>430.8M</td><td>239.13亿</td><td>1.124</td><td>90.1M</td><td>0.209</td></tr>
+<tr><td>VG</td><td>316.01亿</td><td>2500.1M</td><td>349.76亿</td><td>1.107</td><td>531.5M</td><td>0.213</td></tr>
+<tr><td>SYM</td><td>254.44亿</td><td>604.8M</td><td>258.25亿</td><td>1.015</td><td>129.9M</td><td>0.215</td></tr>
+<tr><td>SMR</td><td>33.95亿</td><td>429.7M</td><td>120.00亿</td><td><b>3.535</b></td><td>410.4M</td><td><b>0.955</b></td></tr>
+<tr><td>MAIR</td><td>145.59亿</td><td>591.8M</td><td>156.94亿</td><td>1.078</td><td>177.3M</td><td>0.300</td></tr>
+</table>
+
+<p><b>关键发现: 三个数据源没有一个可直接用</b> ⇒ 原先「7 只保留旧值 + 2 只写 yf 值」的</p>
+<p>分法是<b>错的</b>:</p>
+
+<li><b>yf 股数系统性偏低 0.10~0.30×</b>(UHAL 真实应 194.4M 而 yf 只给 <b>19.4M</b> ——</li>
+<p>   差<b>整一个数量级</b>, 且每只倍数都不同 ⇒ 不是某个统一口径, 是 Yahoo 侧的数据缺失)。</p>
+<li><b>旧登记值也偏高 1.02~6.78×</b>。⚠ 这一点纠正了我上一条的判断: 我曾按</li>
+<p>   「旧/真实 ∈ [0.3, 3.0] ⇒ 旧值可信」建议保留旧值 —— <b>判据本身是错的</b>。</p>
+<p>   旧值反映的是<b>登记那天的价格</b>(UHAL 隐含 $64.82 = 2022 价位, MRNA 同款),</p>
+<p>   它不是「近似当前」, 而是「近似过去」⇒ 涨跌都会偏, 方向还随行情变。</p>
+<p>   ⇒ <b>保留旧值 = 把一个已知错的数留在盘上。</b></p>
+
+<p>⇒ 唯一正确处置: <b>写入用户提供的真值</b>。这也解释了为何 MRNA 那次「保留 yf 新值」在</p>
+<p>本轮看仍偏 7.2% —— 方向对、幅度有偏, 只是当时没有更好的源。</p>
+
+<p><b>机制化: <code>--set-mcap SYM=USD ...</code></b></p>
+
+<pre><code>
+python src/market_cap_recompute.py --apply \
+  --set-mcap UHAL=11697000000 FWONA=21297000000 QNT=12655000000 \
+           CET=1969000000  BNT=13058000000 ARXS=21279000000 \
+           VG=31601000000  SYM=25444000000  SMR=3395000000 MAIR=14559000000 \
+  --confirm-basis "用户独立核实; yf 股数偏低 0.10~0.30×, 旧值偏高 1.02~6.78×"
+</code></pre>
+
+<p>与 <code>--confirm-new</code> 的区别: 后者只能放行「yf 重算的新值」, 而本项目实测 10 只里</p>
+<p><b>8 只 yf 值不可用</b> ⇒ 必须能直接写独立来源的真值。</p>
+
+<p><b>落盘</b>: 10 只逐位吻合(验收 <code>universe</code> 与 <code>panel</code> 双向逐值 == 用户给的数),</p>
+<p><code>mcap_audit</code> 留痕 11 行(10 只 + MRNA), panel 行数不变(3,014,635), 备份齐全。</p>
+<p>待确认名单从 31 → <b>21</b>(15 多类别股 + 6 只 WMG/BEPC/HEI/KLAR/OWL/ULS)。</p>
+
+<p><b>收紧型护栏(全部有测试)</b>:</p>
+<li>解析抽成<b>纯函数</b> <code>parse_set_mcap</code>(无 IO ⇒ fail-closed 行为可单测);</li>
+<li>格式错 / 非数字 / <b>非正</b>一律 <code>SystemExit</code>, <b>绝不静默跳过</b> —— 静默跳过会让</li>
+<p>  「我明明指定了 10 只」与「盘上只改了 8 只」无法区分(模式五十六)。尤其<b>非正</b>:</p>
+<p>  市值 0/负会把 <code>log_mc</code> 打成 -inf/NaN ⇒ 污染<b>全池</b>横截面排名, 一只坏值毁掉整个特征;</p>
+<li>不在候选里的 symbol <b>出声</b>(可能名字拼错或已通过闸)。</li>
+
+<p><b>测试</b>: <code>test_market_cap_filter_and_gate.py</code> 58 → <b>64 例</b>(+1 指定值落盘/留痕,</p>
+<p>+4 参数化 fail-closed, +1 解析正向)。<b>变异测试已验证</b>: 删掉「非正报错」⇒ 2 条变红。</p>
+<p>回归 <code>tests/ops/</code> + <code>tests/market/</code> <b>1505 passed / 3 skipped</b>。</p>
+
+<p>#### 剩余 21 只(未动, 及判据)</p>
+
+<li><b>15 只多类别股</b>(GOOGL/GOOG、BRK-A/BRK-B、NWS/NWSA、FOX/FOXA、AGNC、HBAN、APO、</li>
+<p>  MCHP、SMCI、BMNR、BTSG): yf 的 <code>sharesOutstanding</code> 只给<b>其中一个类别</b>, 而市值要</p>
+<p>  <b>全公司总股本</b> ⇒ 新值系统性偏低; 旧值按各 ticker 自己的类别股数登记 ⇒ <b>结构性正确</b>。</p>
+<p>  ⇒ <b>保留旧值是这 15 只的正确处置</b>(与上面 10 只不同: 那批是「yf 低 + 旧值也偏」,</p>
+<p>  这批是「yf 结构性偏低 + 旧值口径正确」)。可批量显式化。</p>
+<li><b>6 只</b>(WMG/BEPC/HEI/KLAR/OWL/ULS): 股数互校 3.0~3.3×, 性质待判(可能是</li>
+<p>  多次增发/多类别但判据未命中)。⇒ 与上面 10 只同款, 需独立来源给真值。</p>
+
+<h3>补③: 15 只「多类别股」⇒ <b>判据本身过宽, 7/15 误判</b>(2026-10-01 21:36)</h3>
+
+<p><b>触发</b>: 用户提供 15 只多类别股的真实市值(亿): GOOG 41200 / GOOGL 42100 /</p>
+<p>BRK-A 10700 / BRK-B 10700 / NWS 160 / NWSA 154.5 / FOX 250 / FOXA 264.2 /</p>
+<p>AGNC 107.5 / HBAN 308.3 / APO 685.4 / MCHP 422.3 / SMCI 270 / BMNR 159.4 / BTSG 112.2。</p>
+
+<p><b>⚠️ 这批数据推翻了我上一条的核心判断。</b> 我曾按「yf/真实 &lt; 0.7 ⇒ 真多类别, 该拦」</p>
+<p>「yf/真实 ≈ 1.0 ⇒ yf 本就正确」分类, 结论是「15 只多类别股<b>全部保留旧值</b>」——</p>
+<p><b>错了 7 只</b>:</p>
+
+<table>
+<tr><td>组</td><td>同公司另一个 ticker 的性质</td><td>yf值/真实</td><td>我上条的判断</td><td>实际</td></tr>
+<tr><td>GOOGL/GOOG</td><td>Class A + Class C <b>普通股</b></td><td>0.457/0.480</td><td>真多类别, 保留旧值</td><td>✅ 对</td></tr>
+<tr><td>NWS/NWSA、FOXA/FOX</td><td>Class A + Class B <b>普通股</b></td><td>0.356~0.667</td><td>真多类别, 保留旧值</td><td>✅ 对</td></tr>
+<tr><td><b>AGNC</b></td><td>AGNCL/M/N/P/O/Z = <b>Depositary 优先股</b></td><td><b>1.000</b></td><td>真多类别, 保留旧值</td><td>❌ <b>错</b></td></tr>
+<tr><td><b>HBAN/APO/MCHP/SMCI/BTSG/BMNR</b></td><td>全部 <b>优先股/存托凭证</b></td><td><b>≈1.000</b></td><td>真多类别, 保留旧值</td><td>❌ <b>错</b></td></tr>
+</table>
+
+<p><b>根因</b>: <code>multi_class_symbols</code> 的判据是「<b>同公司任何 ticker</b> 在池」。而</p>
+<p><b>「同公司有优先股」与「同公司有多个普通股类别」是完全无关的两件事</b> ——</p>
+<p>优先股不影响普通股市值, 而 yfinance 的 <code>sharesOutstanding</code> 对普通股</p>
+<p><b>本来就是全公司正确的</b>。实测反证: 那 7 只的 yf 值与独立来源<b>逐位吻合</b></p>
+<p>(比值 1.000), 却被判 review 拦下。</p>
+
+<p>⇒ <b>代价不只是 7 个错值</b>: 判据噪声会<b>训练人忽略待确认清单</b>(告警疲劳)。一个</p>
+<p>永远混着「本该自动写」的清单, 人只会整体跳过 —— 那才是真正危险的。</p>
+
+<p><b>修法</b>: 归组前先按 <code>NON_COMMON_CLASS</code> 剔掉非普通股(优先股/存托凭证/票据/单位/</p>
+<p>权证…), 只让<b>普通股</b>参与归组。⚠ 实现上必须<b>先过滤再 <code>groupby</code></b>: 若先</p>
+<p>groupby 再筛, 优先股行已进 <code>syms</code>, <code>len(syms) &lt; 2</code> 的门槛会被撑过(AGNC 组有 6 个</p>
+<p>优先股)⇒ 过滤等于没做。<b>注意 GOOG 组仍成立</b>: GOOGM/GOOGN 是 Depositary(被剔),</p>
+<p>但 GOOGL 与 GOOG 两个普通股类别仍在池 ⇒ 真多类别, 正确拦下。</p>
+
+<p><b>验证</b>: 8 只真多类别<b>全部正确拦下</b>(GOOG/GOOGL/BRK-A/BRK-B/NWS/NWSA/FOX/FOXA),</p>
+<p>7 只误判<b>全部消除</b>; 判据命中从 15 只降到 8 只。</p>
+
+<p><b>落盘</b>: 15 只按用户真值写入(逐位吻合, universe 与 panel 双向一致),</p>
+<p><code>mcap_audit</code> 留痕 <b>26 行</b>(MRNA + 10 + 15), panel 行数不变, 备份齐全。</p>
+<p>待确认名单 21 → <b>14</b>。</p>
+
+<p><b>测试</b>: +3 例(① 同公司只有优先股 ⇒ 不算多类别 = 本次缺陷的锁; ② 两个普通股类别</p>
+<p>仍必须拦 = 反向守卫, 防把判据改废; ③ 优先股撑大组 ⇒ 实现<b>顺序</b>的锁)。</p>
+<p>变异测试已验证: 退回「先 groupby 再筛」⇒ <b>3 条全变红</b>。</p>
+<p>回归 <code>tests/market/</code> 280 + <code>tests/ops/</code> 1161 + 本文件 67 = <b>1508 passed / 3 skipped</b>。</p>
+
+<p>#### 剩余 14 只</p>
+
+<p>WMG / BEPC / HEI / KLAR / OWL / ULS(6 只, 股数互校 3.0~3.3×, 性质待判)+</p>
+<p>8 只真多类别股(判据正确拦下, 旧值口径正确 ⇒ 处置是<b>保留旧值</b>, 已验证)。</p>
+
+<p>⇒ 14 只中 <b>8 只已有明确结论(保留旧值)</b>, 只有 6 只待判。这 6 只与「补②」那 10 只</p>
+<p>同款(股数互校 3 倍以上), 需独立来源给真值; 给数字我用 <code>--set-mcap</code> 写。</p>
+
+<h3>补④: 最后 5 只落盘 + <b>修掉「已确认标的反复回清单」的告警疲劳</b>(2026-10-01 21:45)</h3>
+
+<p><b>落盘</b>: WMG 144.4亿 / HEI 423.5亿 / KLAR 47.0亿 / OWL 144.7亿 / ULS 131.1亿</p>
+<p>(用户独立核实), 逐位吻合, universe 与 panel 双向一致。<code>mcap_audit</code> 留痕累计 <b>31 只</b>。</p>
+
+<p><b>KLAR 顺带印证了「旧登记值陈旧」</b>: 旧值 146.7亿 vs 真实 47.0亿(偏 <b>3.1 倍</b>),</p>
+<p>而 yf 值与真实<b>逐位吻合</b>(比值 1.000)—— 又一只「旧值错、yf 对」。</p>
+
+<p>#### 🔴 修掉的真缺陷: 已确认标的<b>每轮重跑都回到待确认清单</b>(死循环)</p>
+
+<p><b>现象</b>: 用 <code>--set-mcap</code> 写对值的 16 只(GOOG/UHAL/QNT/BRK-A…)**每一轮重跑都回到</p>
+<p>清单<b>。实测: 落盘后清单仍有 17 只, 逐只查 <code>mcap_audit</code> ⇒ </b>16 只已确认、只有 BEPC</p>
+<p>真未确认**。</p>
+
+<p><b>根因</b>: 股数互校拿「yf 股数」对比, 而 <b>yf 股数本身就是错的</b>(UHAL 真实 194.4M</p>
+<p>vs yf 19.4M, 差整一个数量级)⇒ <b>值对了也永远被拦</b>。这是自造的循环。</p>
+
+<p><b>代价不是噪音, 是告警疲劳</b>: 一个混着僵尸项的清单会<b>训练人整体跳过</b> ⇒ 真正的新问题</p>
+<p>一起被忽略。⚠ 实测就差点发生: BEPC 的双层结构口径(见下)差点淹没在 16 个僵尸项里。</p>
+
+<p><b>修法</b>: 已确认(<code>universe.mcap_audit</code> 有留痕)⇒ <b>跳过全部闸门</b>。留痕由 <code>apply()</code> 写,</p>
+<p>判据只<b>读</b>它 —— 单一来源(模式二), 不另立「已确认名单」文件。清单 <b>17 → 1</b>。</p>
+
+<p>#### ⚠ 又一次「假护栏」(模式五十九/一百〇八, 本轮第二次)</p>
+
+<p>第一版锁只测 <code>confirmed_symbols()</code> 这个<b>纯函数</b>, 而变异体删的是**主流程里的</p>
+<p><code>if _confirmed and sym in _confirmed: continue</code><b> ⇒ </b>69 个用例全绿** ⇒ 锁测不到东西。</p>
+
+<p>⇒ 补 <code>test_plan_excludes_confirmed_from_review_end_to_end</code>: 走 <code>plan()</code> 全程(纯函数、</p>
+<p>无网络), 断言打在<b>最终产物</b>(rows 里还有没有这只)而非中间函数上。</p>
+<p>重做变异测试 ⇒ <b>确实变红</b>。⚠ 同时补反向守卫: 无留痕的越界标的<b>仍必须被拦</b></p>
+<p>(跳过闸门 ≠ 放行一切)。</p>
+
+<p><b>测试</b> 67 → <b>71 例</b>(+1 纯函数 +1 端到端 +1 反向守卫 +1 留痕边界)。</p>
+<p>回归 <code>tests/ops/</code> 1232 + <code>tests/market/</code> 280 = <b>1512 passed / 3 skipped</b>。</p>
+
+<p>#### 🟡 唯一未处理: BEPC —— <b>口径有歧义, 不猜</b></p>
+
+<p>用户给「BEPC 约 52.4 亿美元(<b>详见说明</b>)」, 但说明未随附。查池内发现 BEPC 与 BEP</p>
+<p>是<b>两个不同实体</b>:</p>
+
+<table>
+<tr><td>symbol</td><td>实体</td><td>性质</td></tr>
+<tr><td><b>BEPC</b></td><td>Brookfield Renewable <b>Corporation</b> Class A 次级投票股</td><td>公司制</td></tr>
+<tr><td><b>BEP</b></td><td>Brookfield Renewable <b>Partners L.P.</b> LP 单位</td><td>合伙企业制</td></tr>
+</table>
+
+<p><b>Brookfield 双层结构</b>: BEPC 的主要资产<b>就是</b> BEP 的份额 ⇒ 若把两者市值相加会</p>
+<p><b>重复计算同一批资产</b>。用户标的「详见说明」应正是指此。</p>
+
+<p>⇒ <b>本轮不写 BEPC</b>(旧值 133.8亿保持不动), 等口径说明。⚠ 这是刻意的: 三方数据</p>
+<p>(yf 42.6亿 / 旧 133.8亿 / 用户 52.4亿)里哪个是「正确的单标的市值」取决于口径选择,</p>
+<p><b>判不出就问, 不猜</b>(模式五十六)。另注: 池内 Brookfield 系已有 12 个 ticker</p>
+<p>(BN/BAM/BEP/BNH/BNJ/BPYPM/BPYPP/BIP/BPYPO/BPYPN/BEPC/BIPJ), 其中多只为优先股/</p>
+<p>次级票据(已在名字层被 <code>NON_COMMON_CLASS</code> 排除于重算之外)。</p>
+
+<p>#### 当前状态</p>
+
+<table>
+<tr><td></td><td>数量</td><td>说明</td></tr>
+<tr><td>✅ 已重算(自动闸)</td><td>860</td><td>过双重互校</td></tr>
+<tr><td>✅ 已人工确认</td><td><b>31</b></td><td>全部留痕于 <code>mcap_audit</code>(MRNA + 10 + 15 + 5)</td></tr>
+<tr><td>✅ 真多类别股保留旧值</td><td>8</td><td>判据正确拦下, 旧值口径正确</td></tr>
+<tr><td>🟡 待口径确认</td><td><b>1</b></td><td>BEPC(双层结构, 等用户说明)</td></tr>
+</table>
+
+<h3>补⑤: BEPC 口径落定 + <b>市值重算全池收口</b>(待确认 0 只)(2026-10-01 21:53)</h3>
+
+<p><b>BEPC 四源对拍</b>(用户核实):</p>
+
+<table>
+<tr><td>源</td><td>值</td><td>隐含股数</td><td>性质</td></tr>
+<tr><td>东方财富</td><td>42.59亿</td><td>150.9M</td><td><b>≈ yf <code>sharesOutstanding</code> × 价(42.58亿)⇒ 与坏字段同源</b></td></tr>
+<tr><td>Yahoo Finance</td><td>52.4亿</td><td>185.7M</td><td>= yf <code>marketCap</code>(52.35亿)</td></tr>
+<tr><td>Morningstar</td><td>52.4亿(流通市值)</td><td>185.7M</td><td><b>与 Yahoo 两个独立源一致</b></td></tr>
+<tr><td>StockAnalysis</td><td>97.5亿</td><td>345.5M</td><td>含全部股份类别 ⇒ <b>会与 BEP 重复计算</b></td></tr>
+</table>
+
+<p>⇒ <b>采 52.4亿</b>: 两个独立源(Yahoo + Morningstar)一致; 42.59亿 与东方财富和坏字段同源;</p>
+<p>97.5亿 因 Brookfield 双层结构(BEPC 主要资产就是 BEP 份额)会<b>重复计算同一批资产</b>。</p>
+
+<p>#### ⚠⚠ 过程中的一个错误推断(必须记: 抽样否定了它)</p>
+
+<p>发现 BEPC 时我顺带查到 <code>yf marketCap(52.35亿) ≠ sharesOutstanding×价(42.58亿)</code>,</p>
+<p>且 UHAL/GOOG/BEP/AGNC <b>同样不自洽</b> ⇒ 我据此推断「<code>sharesOutstanding</code> 系统性偏低</p>
+<p>约 2 倍, <b>860 只自动写的值大部分是错的</b>」。</p>
+
+<p>⇒ <b>抽样 30 只已自动写入的, 30/30 落在 [0.8, 1.2], 中位比值 1.004</b> —— <b>推断被否</b>。</p>
+<p>真实情况: <code>sharesOutstanding</code> 只对<b>特定复杂结构股</b>出错(多类别/双层/优先股结构),</p>
+<p>而<b>这些恰恰都被闸门拦下进了人工确认</b> ⇒ <b>闸门工作正常, 860 只的值是对的</b>。</p>
+
+<p><b>教训</b>: 从 4 个异常样本推出「系统性偏差」并准备推翻 860 只的落盘 —— 靠的是</p>
+<p><b>抽 30 只随机样本</b>否掉的。若当时直接按推断重算 860 只, 会把本来正确的值二次破坏。</p>
+<p>⇒ 「看到 N 个反例 ⇒ 推断全局有偏」必须先问: <b>闸门为什么恰好把它们拦下来了?</b></p>
+<p>那个「恰好」本身就是闸门有效的证据(模式: 判据给证据, 别让单点观察驱动全局动作)。</p>
+
+<p>#### 顺带修掉: 清单为空时<b>必须清掉陈旧 CSV</b></p>
+
+<p>BEPC 写入后待确认已 0 只, 但 <code>output/market_cap_review.csv</code> <b>仍留着上一轮的 1 只</b></p>
+<p>(<code>if rev:</code> 为假时不删)⇒ 报告显示「1 只待确认」而实际全部处理完 ⇒ <b>清单与事实不符</b>。</p>
+<p>⚠ 后果不是"多一个文件": BEPC 是本轮<b>最难的一处</b>(口径歧义), 清单说它没解决 ⇒</p>
+<p>下一个人会重查一遍。收紧型: 空 ⇒ 显式清理。</p>
+
+<p><b>测试</b> 71 → <b>73 例</b>(+1 空清单清理 +1 反向守卫「非空必须写出」)。</p>
+<p>回归 <code>tests/ops/test_market_cap_filter_and_gate.py</code> 73 + <code>tests/market/</code> 280 全绿。</p>
+
+<p>#### 全池最终状态</p>
+
+<table>
+<tr><td></td><td>数量</td><td>说明</td></tr>
+<tr><td>✅ 自动闸重算</td><td>860</td><td>过双重互校; <b>抽样 30/30 与 yf marketCap 吻合(中位 1.004)</b></td></tr>
+<tr><td>✅ 人工确认(<code>--set-mcap</code>/<code>--confirm-new</code>)</td><td><b>32</b></td><td>全部留痕 <code>mcap_audit</code></td></tr>
+<tr><td>✅ 真多类别股保留旧值</td><td>8</td><td>判据正确拦下, 旧值口径正确</td></tr>
+<tr><td>✅ <b>待确认</b></td><td><b>0</b></td><td>清单已清空</td></tr>
+</table>
+
+<p><b>已知无关项</b>: <code>universe.csv</code> 里 GLD/SLV 各有 2 行重复登记(AGENTS.md 早已登记待清理)</p>
+<p>⇒ 逐值核对时会 merge 配错、显示 4 行不一致。⚠ <b>不是本次引入</b>: ETF 名字层即被排除</p>
+<p>于重算之外, 四只均无 <code>mcap_audit</code> 记录(未改动), panel 侧值唯一且正确。</p>
+
+<h3>补⑥: 用户多源复核 ⇒ 6/8 与上轮一致, 2 只修正; 修「<code>--set-mcap</code> 对已确认标的静默失效」(2026-10-01 22:02)</h3>
+
+<p><b>复核结果</b>: 本轮用户给出 8 只(ARXS/BNT/FWONA/MAIR/QNT/SYM/UHAL/VG)多源核实值,</p>
+<p>与上一轮写入逐只对比:</p>
+
+<table>
+<tr><td>sym</td><td>上轮写入</td><td>本轮</td><td>差异</td><td>处置</td></tr>
+<tr><td>BNT/QNT/SYM/UHAL/VG/FWONA</td><td>130.58/126.55/254.44/116.97/316.01/212.97</td><td>130.6/126.6/254.7/117.0/316.3/213.7</td><td><b>&lt;0.35%</b></td><td>✅ 确认上轮正确, 未重写</td></tr>
+<tr><td><b>ARXS</b></td><td>212.79</td><td><b>220.3</b></td><td><b>+3.5%</b></td><td>修正</td></tr>
+<tr><td><b>MAIR</b></td><td>145.59</td><td><b>126.2</b></td><td><b>−13.3%</b></td><td>修正</td></tr>
+</table>
+
+<p>⇒ <b>6/8 吻合到 0.35% 以内</b>, 独立验证了上一轮的写入是对的(不同来源、不同时间取的数</p>
+<p>能对上 ⇒ 不是巧合)。用户亦澄清了两处同名混淆: <b>BNT</b> = Brookfield Wealth Solutions</p>
+<p>(非加密货币 Bancor)、<b>QNT</b> = Quantinuum Inc.(非加密 Quant)—— 与池内 <code>universe.csv</code></p>
+<p>记录一致, 无需纠正。</p>
+
+<p>#### 🔴 修掉我<b>自己上一轮引入</b>的缺陷: <code>--set-mcap</code> 对已确认标的静默失效</p>
+
+<p>第一次跑 <code>--set-mcap ARXS=... MAIR=...</code> 时<b>没生效</b>(<code>manual: []</code>, 值未变)。</p>
+<p>根因: 上一轮我为修「告警疲劳」加了「已确认标的跳过闸门」, 而**人工给修正值恰恰就是</p>
+<p>针对「已确认过、现在发现当初那个值偏了」的场景** ⇒ 被自己的修复挡在门外。</p>
+<p>⇒ <b>人工 &gt; 自动: 显式指令优先于自动跳过判据。</b> <code>plan()</code> 新增 <code>override_symbols</code></p>
+<p>参数, 被 <code>--set-mcap</code> 点名的标的不再跳过。</p>
+
+<p>⚠ <b>提示语也误导</b>: 旧文案一律说「不在本次候选中(可能已通过闸)」—— 而实际原因是</p>
+<p>「已确认过被跳过」⇒ 把人引向「那就不用管了」的错误结论。已改为<b>分因报告</b>:</p>
+<p>已确认却被跳过 ⇒ ❌ 明确报「本轮修改未生效, 这是 bug」; 从未确认且不在池 ⇒ ⚠ 正常提示。</p>
+
+<p><b>测试</b> 73 → <b>75 例</b>(+1 override 放行 = 本缺陷的锁, +1 反向守卫「override 只放行</p>
+<p>被点名的那几只, 不放行全部已确认标的」—— 防把例外写成放行一切)。</p>
+<p><b>变异测试已验证</b>: 去掉 override 例外 ⇒ 2 条变红。</p>
+<p>回归 <code>tests/market/</code> 280 全绿。</p>
+
+<p>#### 最终核对(9 只, universe 与 panel 双向逐值 == 用户给的数)</p>
+
+<p>ARXS 220.30 / MAIR 126.20 / BNT 130.58 / FWONA 212.97 / QNT 126.55 / SYM 254.44 /</p>
+<p>UHAL 116.97 / VG 316.01 / BEPC 52.40 —— <b>全部 ✓</b>, 待确认 <b>0 只</b>。</p>
+
+<p>#### 本轮(市值重算全过程)的三条元教训</p>
+
+<li><b>「看到 N 个反例 ⇒ 全局有偏」是危险推断</b>。我曾从 BEPC/UHAL/GOOG 四例推出</li>
+<p>   「<code>sharesOutstanding</code> 系统性偏低 2 倍、860 只全错」, 靠<b>抽 30 只</b>否掉(中位 1.004)。</p>
+<p>   ⇒ 关键提问: <b>闸门为什么恰好把它们拦下来了?</b> 那个「恰好」本身就是闸门有效的证据。</p>
+<li><b>一次修复会拆掉另一个通道</b>。「跳过已确认标的」修好了告警疲劳, 却让 <code>--set-mcap</code></li>
+<p>   静默失效 —— 而后者正是修正前者的<b>手段</b>。⇒ 加任何「自动跳过」判据时, 必须同时问:</p>
+<p>   <b>显式人工指令还能不能穿透它?</b></p>
+<li><b>提示语要说对原因</b>。「不在候选中(可能已通过闸)」把「已确认被跳过」说成「已通过闸」</li>
+<p>   ⇒ 人会得出「不用管」的错误结论。收紧型判据必须<b>分因出声</b>, 不给模糊归因。</p>
+
+<hr>
+
+<h2>决策三十六(2026-10-02):波段点特征改为显式因果构造 —— <b>逐位等价, 无需重训</b></h2>
+
+<h3>背景</h3>
+<p>全仓审查发现 <code>features.py:136-137</code> 是<b>唯一</b>两处 <code>center=True</code> 滚动窗口:</p>
+
+<pre><code>
+is_low   = (lo == lo.rolling(2*w+1, center=True, min_periods=2*w+1).min())
+seen_low = is_low.shift(w)          # 靠位移抵消未来窗口
+</code></pre>
+
+<p><b>结论: 该写法当时并无泄漏</b>(扰动测试: 改未来 bar 只影响 <code>fwd_*</code> 标签)。风险不在</p>
+<p>取值, 而在<b>正确性完全依赖两个动作恰好互相抵消</b> —— 改 <code>w</code> 或删 <code>shift</code> 即静默变成</p>
+<p>前视泄漏, 而特征层同时喂训练与推理, 污染代价最高。</p>
+
+<h3>决策</h3>
+<p>改为<b>一眼可判因果</b>的写法(不使用任何未来窗口, 不依赖抵消):</p>
+
+<pre><code>
+lo_min_to_t = lo.rolling(2*w + 1, min_periods=2*w + 1).min()
+seen_low    = (lo.shift(w) == lo_min_to_t).fillna(False)
+</code></pre>
+
+<p>语义不变: 在 t 时刻只用 <code>[t-2w, t]</code> 的历史极值, 问「t-w 那天的 low 是否就是这个</p>
+<p>历史窗口的最低点」—— 确认时点天然落在 t。</p>
+
+<h3>关键证据: <b>不改变任何生产取值 ⇒ 无需重训</b></h3>
+<p>逐位等价实测(300 只真实标的 × 6 列 = <b>1788 组, 0 处不一致</b>, 含 NaN 尾部行为):</p>
+<p><code>days_since_low</code> / <code>days_since_high</code> / <code>near_low_10</code> / <code>near_high_10</code> /</p>
+<p><code>ret_since_low</code> / <code>ret_since_high</code> 全部相同。</p>
+<p>⇒ 本条<b>不触发重训闸门</b>(未改变训练输入), 可直接落地。</p>
+
+<h3>边界: center=True 在<b>标签段</b>仍然存在且合法</h3>
+<p><code>fwd_days_to_high/low</code> 的定义是「距下一个<b>已确认</b>波段高/低点还有几天」——</p>
+<p>按定义就是<b>未来量</b>, 只进标签、绝不进特征。故 <code>center=True</code> 从特征段移到标签段,</p>
+<p>使「特征侧不许有 center=True」这条纪律一眼可查。</p>
+
+<h3>回归锁</h3>
+<p><code>tests/features/test_causality_center_window.py</code>(7 例): 等价性证明 / 特征段禁</p>
+<p><code>center=True</code> / 标签段必须有 / 扰动双向自检(防假绿灯)/ rsi 哨兵契约。</p>
+<p><code>tests/research/test_feature_cause_audit.py::test_swing_features_are_causal_despite_centered_window</code></p>
+<p>同步从「断言旧写法」改为「断言因果性本身」。</p>
+<p><b>变异测试已验证</b>: 把特征侧改回 <code>center=True</code> ⇒ <b>4 条变红</b>(两个文件各抓到)。</p>
+
+<h3>顺带: <code>rsi_14</code> 哨兵(50.0)只标注, 不改值</h3>
+<p><code>features._rsi</code> 的 <code>out.fillna(50.0)</code> 是<b>哨兵</b>(预热不足 / <code>avg_loss==0</code>), 与「真实</p>
+<p>RSI 恰为 50」不可区分(实测 dataset 命中 0.61%)。<b>决策: 只标注, 不改取值</b> ——</p>
+<p>改 NaN 会改变训练输入 ⇒ 须重训, 不在本次范围。</p>
+<p>缓解已存在: <code>feature_cache_guard.SENTINELS</code> 已登记该值, 缓存对拍时当无效值处理。</p>
+<hr>
+
+<h2>决策四十一 —— arXiv/SSRN 六篇外部方法的处置: 一项<b>只落账不收紧</b> / 一项<b>过闸门但证据仅为「提示」</b> / 四项不可测或不适用(2026-10-03)</h2>
+
+<blockquote>承接决策三十四/三十五/三十八/四十的外部方法台账。本轮信源:</blockquote>
+<blockquote>arXiv 2609.27051(anytime-valid 裁判) / 2609.14205(CAST, ICDM 2026) /</blockquote>
+<blockquote>2609.08106(Nyström 注意力) / 2609.07122(centering) / 2608.28060(STRATA) /</blockquote>
+<blockquote>JBF 182(2026) 拥挤度。全部落盘 <code>data/research_findings.json</code>(链接健康 0 死链)。</blockquote>
+
+<h3>① 假发现预算(2609.27051): <b>只落账, 不收紧任何门</b></h3>
+
+<p>该文的核心量化是「<b>谁判决定错误放行数</b>」——冻结裁判比故意漏判的裁判少放行</p>
+<p><b>5-11 倍</b>亚阈值因子; 且一个真因子要等约 <b>500 交易日</b>才被认证, 认证组合 Sharpe</p>
+<p>反而低于无门控。我们已有 9 起点复核 + 打乱标签对照 + 竞技场三关, 但<b>没有记账</b>。</p>
+
+<p>新增 <code>scripts/factor_fd_budget_2026-10-03.py</code>(只读): 用每个候选<b>自己的</b></p>
+<p><code>shuffle_mean</code> 当噪声地板, 算它高出多少, 并给 BH 期望假发现上界。</p>
+
+<p>**实测: 已复核 126 / 通过 112 / 其中 111 个(99.1%)IC 显著高于自己的打乱地板;</p>
+<p>BH 期望假发现上界 ≈ 5.6 个。** 唯一被本门记下的通过者是 <code>close_to_52w_high</code></p>
+<p>(真实 IC <b>−0.0364</b>、地板 +0.0019 —— 负 IC 却过了筛选门)。</p>
+
+<p>⇒ <b>决定不收紧生产门</b>。理由: 本门在现阈值(+0.01)下几乎不改变判定(112→111),</p>
+<p>收紧到 +0.05/+0.10 才明显砍人(104/80), 但<b>任何收紧都必须重走 9 起点 + 竞技场三关</b>,</p>
+<p>不能凭一本账改判据(模式五十六: 只报事实)。假发现预算登记为<b>候选门</b>, 留待</p>
+<p>真有「通过者大面积与噪声不可区分」时再启用。<b>教训</b>: 我们的打乱对照已经比</p>
+<p>该文场景更严(每个候选各自对照), 所以「5-11 倍」这个改善空间<b>对我们不成立</b>。</p>
+
+<h3>② CAST 跨资产 Kalman(2609.14205): <b>上界口径「有增量」, 但独立观测下不显著 ⇒ 方向关闭</b></h3>
+
+<p><b>没有直接实现 Kalman</b>(模式一百〇九)。先按该文要消费的<b>原始信息</b></p>
+<p>(跨资产相关/beta/特质波动占比, 5 列纯量价因果构造) 喂 LGB, 与 base26 配对比较。</p>
+
+<p><b>这是本轮最值得记的一条: 同一个 Δ 在三种口径下给出三个不同答案。</b></p>
+
+<table>
+<tr><td>口径</td><td>样本</td><td>t</td><td>正向</td><td>该不该信</td></tr>
+<tr><td>上界测试(naive, 逐日)</td><td>158 天</td><td><b>4.15</b></td><td>—</td><td>❌ 158 天共享 59/60 收益窗</td></tr>
+<tr><td><code>--walk</code> 多切点(窗口重叠)</td><td>5 窗</td><td><b>4.67</b></td><td>5/5 窗</td><td>⚠ 汇总高只因窗间重叠; <b>逐窗全部 &lt;2</b></td></tr>
+<tr><td><code>--disjoint</code> 严格互不重叠</td><td><b>16 块</b></td><td><b>1.67</b></td><td><b>12/16 块</b></td><td>✅ <b>独立观测, 判据以此为准</b></td></tr>
+</table>
+
+<p><code>--disjoint</code> 设计: 切点固定 <b>2022-01-03</b>(训练窗 1371 个交易日, 充足), 测试窗铺到</p>
+<p><b>2025-11-18</b>(留 60 日标签成熟期, 实测 974 个交易日), 切成 **16 个首尾相接、互不</p>
+<p>重叠<b>的 60 日块 ⇒ 每个块是一批</b>真正独立**的观测。</p>
+
+<p><b>实测: naive_t=9.60 → block_t=1.67。</b> 差这么远的原因看块明细就清楚: 16 块里</p>
+<p><b>4 块显著为负</b>(2022Q1 −0.0657 / 2023Q3 −0.0648 / 2025Q3 −0.0630), 而逐日 naive t</p>
+<p>完全被相邻天的共享窗口抹平了这些反转。量级也不小: ic_base +0.0990 → ic_full</p>
+<p>+0.1256(Δ <b>+0.0265</b>, 比折6 窗的 +0.0089 还大), 但<b>方向不稳定</b>。</p>
+
+<p>⇒ <b>判定: 方向关闭, 不建跨资产模型, 不接线。</b> 「有增量」在 naive 口径成立、在独立</p>
+<p>观测下<b>不成立</b>, 差异全部来自重叠窗口。**若日后有人拿 naive t=4~10 报这个方向,</p>
+<p>直接指本条。** 诚实读法: 平均确有提升, 但它在 2022 熊市与 2023/2025 两次反转</p>
+<p>⇒ 「平均方向对、路径不稳」, 不是可交易信号。</p>
+
+<p><b>方法论沉淀(本轮最可复用的产出)</b>: 本项目<b>能给的</b>最强独立证据是</p>
+<p>「<b>固定早期切点 + 长测试窗 + 严格非重叠块</b>」(实测 16 块), 而不是「滚动多窗」</p>
+<p>(窗间必重叠)。<b>凡是要给「增量/显著性」下最终结论, 用前者。</b></p>
+
+<h3>③ 四项不可测/不适用(不否决方向, 归档备查)</h3>
+
+<table>
+<tr><td>来源</td><td>处置</td><td>一句话依据</td></tr>
+<tr><td>Nyström 注意力 2609.08106</td><td>不适用</td><td>我们是单股 MLP+LGB 秩平均, 无股间注意力; 该文反证「N≈3500 时跨股模块不如单股 LSTM」</td></tr>
+<tr><td>centering 2609.07122</td><td>弱相关</td><td>我们的输入已无量纲比率, 主效应(去绝对 offset)弱; 仅给 <code>log_mc</code> 市值重算多一个备选假设</td></tr>
+<tr><td>STRATA 2608.28060</td><td>不可测</td><td>需 5 分钟 bar + 盘口, 我们只有日线 OHLCV; 可迁移的是它「首个可成交价 vs 收盘价」的前视量化做法</td></tr>
+<tr><td>拥挤度 JBF 182(2026)</td><td>不可测</td><td>核心量是 13F 机构持仓(季度滞后), 无数据源; 我们的 decay/quality monitor 都不是拥挤度</td></tr>
+</table>
+
+<p>⚠ <b>「不可测」≠「无效」</b>(同决策三十八的 GEX 先例): 拥挤度留档, 若日后接 13F 可复用。</p>
+
+<h3>⚠ 过程中实测抓到的两个 bug(与决策四十同类: 只朝好看方向偏的 bug)</h3>
+
+<li><b><code>idio_vol_ratio</code> 静默全 NaN</b>: 市场方差是逐日一维序列, 写 <code>beta*<i>2 </i> mvar</code></li>
+<p>   会让 pandas 按位置对齐成<b>列</b>方向 ⇒ 全 NaN; 而 corr/beta 两列仍正常 ⇒ 极易</p>
+<p>   误判「构造成功」。<b>首次跑出的「有增量」其实只有 4 列</b>。已修(显式 <code>axis=0</code>)</p>
+<p>   并加<b>非空断言</b>(全 NaN 直接 raise, 不许带空列继续跑)。修复后 5 列齐</p>
+<p>   (idio 2.98M 非空, 值域 [0,1])。</p>
+<li><b>整读 177 列 dataset + 宽表 ⇒ 被 OOM 静默杀掉</b>: 现象是**空日志、无堆栈、</li>
+<p>   无产物**。已改只读需要的列 + <code>del</code> 中间表。</p>
+
+<p>⇒ <b>纪律补充</b>: 「corr/beta 正常」不等于「整组特征正常」; 每个派生列都要单独</p>
+<p>非空断言。上界测试报「有增量」时, 先确认<b>实际用了几列</b>。</p>
+
+<h3>复现</h3>
+
+<h3>③ 期权因子动物园(2609.31263): <b>已用我们自己的数据实测</b>, 给出 60 天到期时的决策依据</h3>
+
+<p>该文结论: 股票因子解释 <b>91%</b> 的期权因子方差, 加期权因子不显著提高最大 Sharpe;</p>
+<p>但 20 个期权因子中 <b>8 个</b>(跳跃尾部/峰度/IV 凸性)控制股票动物园后仍有非零 SDF</p>
+<p>载荷, <b>4 个</b>过 Bonferroni ⇒ 「期权只补充少数几个维度, 不是新因子动物园」。</p>
+
+<p><b>我们已在攒 <code>data/options_daily/</code></b>(2026-09-24 起), 纪律是「&lt;60 天不进生产判定」。</p>
+<p>但那条纪律没回答「攒够之后值不值得用」。新增 <code>scripts/option_factor_zoo_check_2026-10-03.py</code></p>
+<p>用<b>我们自己那 7 个交易日 × 310 标的 × 14 个期权特征</b>实测:</p>
+
+<li><b>管道健康</b>: 14 列全部非恒定、非空率可接受(iv_atm 中位 0.50 / p05 0.25)。</li>
+<li><b>共线性(末日横截面秩相关 vs 成交额)</b>:</li>
+<p>  - 6 个<b>规模类</b>特征(合约数/near/far/total_oi/total_volume/premium_total)</p>
+<p>    <b>ρ = +0.65 ~ +0.81</b> ⇒ 几乎是成交额的代理, 增量空间被压缩;</p>
+<p>  - <b>IV 家族</b>(iv_atm/偏斜/期限/PC 比)<b>|ρ| 普遍 &lt; 0.22</b> ⇒ 共线低, 才是可能有余量的方向。</p>
+
+<p>⇒ <b>与原文 91% 的结论在我们数据上同向</b>, 且给出了更可操作的指向: 若 60 天后要测,</p>
+<p><b>先测 IV 家族, 不要测规模类</b>(后者是成交额的重复)。⚠ **7 &lt; 60 交易日 ⇒ 本次</p>
+<p>不判任何因子有效性**, 只报管道健康与共线量级; 判定留给样本到期后。</p>
+
+<h3>④ 其余三项: 概念呼应但<b>不可迁移/不可测</b>(归档备查)</h3>
+
+<table>
+<tr><td>来源</td><td>处置</td><td>依据</td></tr>
+<tr><td>PALM 2609.30316</td><td>归档备查</td><td>治的是 <b>LLM 文本前视</b>(逐年 checkpoint 必要性), 我们是 <b>survivorship bias</b> + 非 LLM; 唯一可迁移的方法论问题是「每期全量重训的必要性从未验证」—— 与我们影子重训/任期闸门同源</td></tr>
+<tr><td>主题模型 2609.34169</td><td><b>不可测</b></td><td>我们<b>无任何新闻/文本数据源</b>; 且作者自承<b>未做严格 PIT 检验</b>, 即便有数据也不能直接采信</td></tr>
+</table>
+
+<h3>⚠ 过程中实测抓到的 4 个 bug(全部是「静默」型)</h3>
+
+<p>前两个见上文 CAST 段; 本轮新增:</p>
+<li><b>参考列没 merge 就丢列名给 groupby</b> ⇒ <code>KeyError</code>。</li>
+<li><b>按期权快照日期取面板 ⇒ 空 merge ⇒ 共线性静默变 NaN</b>: 期权抓到 10-03 而</li>
+<p>   面板末日仍是 10-02。已改取<b>两边共有的最近交易日</b>。</p>
+
+<p>⇒ <b>纪律补充</b>: 两个数据源对齐时, <b>必须取共有日期</b>, 直接用任一源的日期去</p>
+<p>join 另一个源, 空集不会报错只会静默给 NaN/空结果。</p>
+
+<h3>复现</h3>
+
+<pre><code>
+.venv/bin/python scripts/factor_fd_budget_2026-10-03.py          # 假发现预算账
+.venv/bin/python scripts/cast_upper_bound_2026-10-03.py          # CAST 上界(naive)
+.venv/bin/python scripts/cast_block_t_2026-10-03.py --disjoint   # CAST 严格非重叠块(判据以此为准)
+.venv/bin/python scripts/option_factor_zoo_check_2026-10-03.py   # 期权增量体检
+.venv/bin/python scripts/disjoint_recheck_2026-10-03.py          # 用 disjoint 复核历史否决
+</code></pre>
+
+<p>产物: <code>output/factor_fd_budget.{json,md}</code> / <code>output/cast_upper_bound.{json,md}</code> /</p>
+<p><code>output/cast_block_t.json</code> / <code>output/option_factor_zoo_check.{json,md}</code> /</p>
+<p><code>output/disjoint_recheck.json</code>。五脚本<b>只读</b>, 未碰生产文件/模型/信号列/历史台账。</p>
+<p>回归锁: <code>tests/research/test_factor_fd_budget.py</code>(5) + <code>test_cast_upper_bound.py</code>(5) +</p>
+<p><code>test_cast_block_t.py</code>(7) + <code>test_option_factor_zoo.py</code>(5) + <code>test_disjoint_recheck.py</code>(4)。</p>
+
+<hr>
+
+<h2>⚠ 加查: 用 disjoint 口径<b>复核历史否决</b>, 发现当年 RAVEN 判定本身也被污染(2026-10-03)</h2>
+
+<p>本轮证明 naive/滚动窗会给出相反结论后, 自然要问: <b>历史上靠 naive 口径下的否决, 是不是也被污染?</b> 候选 = 决策三十四的<b>收益路径方向</b>(RAVEN, 及更早被同一关卡挡下的 LSM 储备池/LSTM/Transformer)—— 它们当年正是用 <code>upper_bound_probe</code> 的 naive 配对 t 判掉的。</p>
+
+<p>新增 <code>scripts/disjoint_recheck_2026-10-03.py</code>(同一 disjoint 口径: 切点 2022-01-03、</p>
+<p>测试窗到 2025-11-18、16 个互不重叠 60 日块), 重算 RAVEN 三档:</p>
+
+<table>
+<tr><td>档</td><td>当年 Δ(naive, PROBE_CUT)</td><td>当年 t</td><td>当年判定</td><td><b>disjoint Δ</b></td><td><b>disjoint block_t</b></td><td>独立观测判定</td></tr>
+<tr><td>lag1_20</td><td><b>−0.0028</b>(显著更差)</td><td>−2.41</td><td>无增量</td><td><b>+0.0024</b></td><td><b>+2.29</b> (12/16 正)</td><td>有增量(显著)</td></tr>
+<tr><td>lag1_60</td><td>+0.0005</td><td>+0.34</td><td>无增量</td><td><b>+0.0025</b></td><td><b>+2.76</b> (11/16 正)</td><td>有增量(显著)</td></tr>
+<tr><td>lag1_120</td><td>−0.0024</td><td>−1.52</td><td>无增量</td><td>+0.0037</td><td>+1.09 (9/16 正)</td><td>无增量</td></tr>
+</table>
+
+<p><b>⇒ 当年「lag1_20 显著更差」是错的</b>: 换成独立观测后<b>翻成显著为正</b>(−0.0028 → +0.0024)。</p>
+<p>这坐实 naive 污染是<b>双向</b>的: 不只虚高, 也会把正翻成负。</p>
+
+<p><b>但结论不变 —— 仍不建 RAVEN/LSM</b>, 理由从「零增量」更正为「<b>增量极小</b>」:</p>
+<li>三档 Δ <b>绝对值都远低于 0.01 门槛</b>(最大 +0.0037), 相对 base IC 提升仅 <b>+2.4%~+3.8%</b></li>
+<p>  (项目惯例: 相对 &lt;20% 视为噪声内);</p>
+<li>即便统计显著, 经济意义可忽略 ⇒ 「显著但无用的增量」;</li>
+<li>lag1_120 连独立观测都不显著(block_t 1.09, 9/16 正)。</li>
+
+<p>⇒ <b>决策: 不翻案, 但判定理由必须更正</b> —— 不是「零增量」而是「增量极小 + 120 档不稳」。</p>
+<p>⚠ 若日后有人拿「RAVEN 那方向已证零增量」直接关掉某提案, 会引用一个<b>错的前提</b>。</p>
+<p><b><code>upper_bound_probe</code> 的 naive 口径(及所有依赖它的历史判定)都应视为待用 disjoint 复核。</b></p>
+
+<h3>⚠ 过程中实测抓到的第 5 个 bug</h3>
+
+<p><b><code>columns=</code> 列表未去重 ⇒ 同名列读成 DataFrame 而非 Series</b>: <code>ret_1d</code> 既在</p>
+<p><code>base_features()</code> 里又被显式列入 <code>need</code> ⇒ 读回重复列 ⇒ <code>pd.to_numeric</code> 抛</p>
+<p><code>TypeError: arg must be a Series</code>(报错完全指不到真因)。已改 <code>sorted({...})</code> 去重 +</p>
+<p>加 <code>assert isinstance(..., pd.Series)</code>; <b>同一潜在模式已在 <code>cast_block_t</code> 一并修掉</b>。</p>
+<p>(附带 <code>rolling(k, min_periods=k//2)</code> 在 k=1 时 mp=2 &gt; window=1 ⇒ ValueError, 已改 k=1 用 mp=1。)</p>
+
+<p>产物: <code>output/disjoint_recheck.json</code>。脚本<b>只读</b>, 未碰生产文件/模型/历史判定台账。</p>
+
+<hr>
+
+<h2>⚠ 加查②: 复核 Hurst 的「显著负增量」否决 —— <b>方向成立, 但「显著」不成立</b>(2026-10-03)</h2>
+
+<p>Hurst 的否决依据是上界测试给出<b>显著负增量</b>: base IC +0.1218 → full +0.1131,</p>
+<p>配对 Δ <b>−0.0087</b>, naive <b>t = −6.21</b>(156 天)⇒ 台账写「**不是零增量, 是 9 列纯</p>
+<p>噪声特征在过拟合**」。那个 |t| 比 RAVEN 还大, 同样受重叠窗口污染。</p>
+
+<p>新增 <code>scripts/hurst_recheck_2026-10-03.py</code>(复用 <code>hurst_assessment_2026-10-01.py</code></p>
+<p>已算好的 H 面板, 落 <code>data/tmp/hurst_panel_reuse.parquet</code> 缓存, 不重算 H)。</p>
+
+<table>
+<tr><td>口径</td><td>Δ</td><td>t</td><td>正向块</td><td>该不该信</td></tr>
+<tr><td>当年(naive, PROBE_CUT, 156 天)</td><td><b>−0.0087</b></td><td><b>−6.21</b></td><td>—</td><td>❌ 逐日共享 59/60 收益窗</td></tr>
+<tr><td>disjoint(切点 2022-01-03, <b>16 块</b>)</td><td><b>−0.0042</b></td><td><b>−1.25</b></td><td><b>6/16</b></td><td>✅ 独立观测</td></tr>
+</table>
+
+<p><b>⇒ 当年「显著负增量」站不住</b>: 独立观测下 block_t 仅 <b>−1.25</b>(远未到 −2), 只有</p>
+<p>6/16 块为正 ⇒ 「9 列纯噪声特征在过拟合」这个<b>理由</b>不成立。</p>
+
+<p><b>但结论不变 —— 仍否决 Hurst</b>, 理由要换成<b>另外两条(与显著性无关)</b>:</p>
+<li><b>量级微小</b>: |Δ| = 0.0042, 相对 base IC 仅 <b>4.2%</b>;</li>
+<li><b>真正的根因是结构性错配</b>(与统计口径无关): Hurst 是<b>时序</b>统计量(趋势 vs</li>
+<p>   均值回归), 我们是<b>横截面</b>选股系统(哪只涨得多)—— 两个不同问题。它在后者上</p>
+<p>   本就没有表达通道, 加进去只是加噪声维度。</p>
+
+<p>⇒ <b>决策: 不翻案, 但台账的「显著负增量 / 纯噪声在过拟合」措辞必须更正</b>为</p>
+<p>「<b>增量极小且方向为负, 根因是时序 vs 横截面的结构性错配</b>」。</p>
+
+<h3>三条历史否决的复核汇总(本轮)</h3>
+
+<table>
+<tr><td>方向</td><td>当年理由(naive)</td><td>disjoint 复核</td><td>结论是否变</td><td>理由是否要改</td></tr>
+<tr><td>RAVEN/LSM 路径</td><td>零/负增量(Δ −0.0028)</td><td>Δ <b>翻正</b> +0.0024(block_t 2.29)</td><td>不变(不建)</td><td>✅ 要改: 「零增量」→「增量极小(+2~4%)」</td></tr>
+<tr><td><b>Hurst</b></td><td><b>显著负增量</b>(t −6.21)</td><td>Δ −0.0042, <b>block_t −1.25 不显著</b></td><td>不变(否决)</td><td>✅ 要改: 「显著负增量」→「增量极小且根因是结构性错配」</td></tr>
+<tr><td>CAST 跨资产</td><td>(本轮新测) naive t 4.15</td><td>block_t <b>1.67</b> 不显著</td><td>方向关闭</td><td>新增判定</td></tr>
+</table>
+
+<p><b>共同教训</b>: 三条里有<b>两条</b>的「显著/零增量」措辞在独立观测下不成立。naive t 在</p>
+<p>本项目会<b>系统性地把效应说成更确定</b>(正负两个方向都会), 因为 60 日前瞻标签让相邻</p>
+<p>天共享 59/60 的窗口。**凡引用过 <code>upper_bound_probe</code> naive 口径的历史判定, 结论</p>
+<p>多数仍成立(方向对), 但「显著/零」这类措辞不可信** —— 已在上表逐条更正。</p>
+
+<h3>复现</h3>
+
+<pre><code>
+.venv/bin/python scripts/hurst_recheck_2026-10-03.py       # 复核 Hurst 否决
+</code></pre>
+
+<p>产物: <code>output/hurst_recheck.json</code> + <code>data/tmp/hurst_panel_reuse.parquet</code>(H 面板缓存)。</p>
+<p>脚本<b>只读</b>, 未碰生产文件/模型。</p>
+
+<hr>
+
+<h2>⚠ 加查③: 复核「标签期限悖论」否决 —— <b>同一形态第三次出现</b>(2026-10-03)</h2>
+
+<p>决策三十四的第二条否决: 受控实验(唯一变量 = 训练标签期限, 评估目标恒为</p>
+<p><code>fwd_ret_60</code>)里, <code>fwd_ret_20</code> 档比对齐档 <b>t = −7.70</b> ⇒ 论文「最优监督期限在中间」</p>
+<p>在本数据不成立。</p>
+
+<p>看原脚本 <code>scripts/label_horizon_paradox_2026-09-28.py:129-134</code>, 那个 t 是</p>
+<p><b>逐日配对差值的 naive t</b> ⇒ 与前两轮<b>完全同源</b>的污染。</p>
+
+<p>新增 <code>scripts/label_horizon_recheck_2026-10-03.py</code>(复刻原实验, 同一 base 特征/超参/</p>
+<p>唯一变量, 只换判定口径)。⚠ 本脚本有一处<b>前几轮没有的约束</b>: 评估目标是</p>
+<p><code>fwd_ret_60</code> ⇒ <b>块长必须 = 评估目标期限(60)</b>, 否则块内 IC 仍共享窗口。</p>
+
+<table>
+<tr><td>训练标签</td><td>IC</td><td>Δ(对齐档)</td><td>naive t</td><td><b>block_t</b></td><td>正向块</td></tr>
+<tr><td>fwd_ret_60(对齐档)</td><td>+0.0990</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td>fwd_ret_40</td><td>+0.0988</td><td>−0.0002</td><td>−0.18</td><td><b>−0.16</b></td><td>8/16</td></tr>
+<tr><td><b>fwd_ret_20</b></td><td>+0.0843</td><td><b>−0.0147</b></td><td><b>−6.65</b></td><td><b>−1.43</b></td><td><b>4/16</b></td></tr>
+</table>
+
+<p><b>⇒ 「显著更差」措辞同样不成立</b>(block_t −1.43 &lt; 2)。<b>否决结论不变</b>(短标签在</p>
+<p>60 日目标上确实更差, 与 <code>ic_report</code> 的先验单调递增一致)。</p>
+
+<p>⚠ <b>但这一条与前两条性质不同, 必须诚实标出</b>: <code>fwd_ret_20</code> 的 |Δ| = **0.0147 =</p>
+<p>base 的 14.8%<b>, 是前两条(+2.4% / 4.2%)的 </b>3~6 倍<b>, 且 16 块里 </b>12 块为负**</p>
+<p>—— 方向一致性其实<b>很强</b>。它只是没到 t=2 的统计线。⇒ **按项目「显著型判据要</p>
+<p>收紧(模式五十六)」, 这条不能像前两条那样简单说「理由不成立」**; 诚实表述是:</p>
+<p>「**方向强一致(12/16 块为负)且量级可观(14.8%), 但独立观测下 t 未达显著线</p>
+<p>(−1.43) ⇒ 判定从『显著更差』降级为『方向明确但统计未显著』**」。</p>
+
+<p><b>这暴露一条新的方法论要点</b>: 「naive 污染 ⇒ 措辞要降级」不是无条件的 ——</p>
+<p>当效应<b>量级大 + 块级方向高度一致</b>时, 独立观测虽未达显著, 仍是<b>有力弱证据</b>,</p>
+<p>不能一律当「不成立」。前两条(量级 2~4%)是真小, 这条(14.8% + 12/16 负)不是同一档。</p>
+
+<h3>四条历史否决/判定的复核汇总</h3>
+
+<table>
+<tr><td>方向</td><td>当年理由(naive)</td><td>disjoint 复核</td><td>结论变否</td><td>理由怎么改</td></tr>
+<tr><td>RAVEN/LSM 路径</td><td>零/负增量 −0.0028</td><td>Δ <b>翻正</b> +0.0024(t 2.29)</td><td>不变(不建)</td><td>「零增量」→「增量极小(+2~4%)」</td></tr>
+<tr><td>Hurst</td><td><b>显著负增量</b> t=−6.21</td><td>t <b>−1.25</b> 不显著(6/16 正)</td><td>不变(否决)</td><td>「显著负增量」→「增量极小 + 结构性错配」</td></tr>
+<tr><td><b>标签期限悖论</b></td><td><b>显著更差</b> t=−7.70</td><td>t <b>−1.43</b> 不显著(4/16 正, <b>12/16 负</b>)</td><td>不变(否决)</td><td>「显著更差」→「<b>方向强一致但统计未显著</b>」(⚠ 量级 14.8%, 不宜一律降级)</td></tr>
+<tr><td>CAST 跨资产</td><td>(本轮新测) naive t 4.15</td><td>t <b>1.67</b> 不显著</td><td>方向关闭</td><td>新增判定</td></tr>
+</table>
+
+<p><b>共同教训(三条同源)</b>: naive t 在本项目<b>系统性夸大显著性</b>(60 日前瞻标签 ⇒</p>
+<p>相邻天共享 59/60 窗口), 三处复核的 |t| 分别从 2.41/6.21/7.70 掉到 2.29/1.25/1.43。</p>
+<p>⚠ <b>但降级幅度要按量级区分</b>: 前两条是真小(2~4%)⇒ 理由基本作废; 第三条量级</p>
+<p>14.8% + 12/16 块同向 ⇒ 只是「未达显著」, 仍是<b>有力弱证据</b>。</p>
+<p><b>「naive 不可信」≠「naive 全错」</b> —— 这是本轮加查③最该记住的一条。</p>
+
+<h3>复现</h3>
+
+<pre><code>
+.venv/bin/python scripts/label_horizon_recheck_2026-10-03.py   # 复核标签期限悖论
+</code></pre>
+
+<p>产物: <code>output/label_horizon_recheck.json</code>。脚本<b>只读</b>, 未碰生产文件/模型。</p>
+
+<hr>
+
+<h2>决策四十二: 把 disjoint 口径<b>固化进 <code>upper_bound_probe</code></b>(2026-10-03)</h2>
+
+<p>前面三条加查证明 naive t 在本项目会系统性虚高, 而新提案还会继续用这个口径 ⇒</p>
+<p><b>必须把它固化成默认能力</b>, 否则每来一个新提案都要重踩同一个坑。</p>
+
+<h3>改了什么(<code>src/upper_bound_probe.py</code>, 唯一的生产改动)</h3>
+
+<p><b>纯新增, 不改任何既有行为</b>:</p>
+<li><code>DISJOINT_CUT/DISJOINT_END/DISJOINT_BLOCK/DISJOINT_T/DISJOINT_MIN_BLOCKS</code></li>
+<p>   五个常量(实测标定: 切点 2022-01-03 训练窗 1371 交易日 → 2025-11-18 留 60 日</p>
+<p>   标签成熟期 ⇒ 可切 16 个互不重叠块; <b>块长必须 = 评估目标期限</b>)。</p>
+<li><code>disjoint_blocks()</code> —— 把逐日配对差值切成<b>首尾相接、互不重叠</b>的块算块级 t(纯函数)。</li>
+<li><code>disjoint_verdict()</code> —— <b>独立观测</b>判定, 复用 <code>verdict_from_series</code> 的参照系</li>
+<p>   自检与数值噪声护栏, 只把「显著性」换成块级 t。</p>
+<li><code>run_probe_disjoint()</code> —— 与 <code>run_probe</code> 同构, 推荐入口。</li>
+<li>CLI <code>--disjoint</code>; <b>不加时走 naive 但会打印醒目警告</b>并建议重跑。</li>
+
+<p>⚠ <b><code>verdict_from_series</code> 与 <code>run_probe</code> 行为逐字未变</b> ⇒ 其 20 个既有回归测试</p>
+<p>全部继续绿(已跑)。这是刻意的: 固化是<b>新增能力</b>, 不是改旧口径。</p>
+
+<h3>判定语义(比 naive 多一档, 别误读)</h3>
+
+<table>
+<tr><td>块级 t</td><td>Δ 方向</td><td>判定</td></tr>
+<tr><td>≥ 2</td><td>正</td><td>有增量</td></tr>
+<tr><td>≤ −2</td><td>负</td><td><b>显著负增量</b>(独立观测下确实更差, 不是虚高)</td></tr>
+<tr><td>未达显著</td><td>任意</td><td><b>方向明确但未达显著</b> + 附量级占 base % + 块级方向一致性</td></tr>
+</table>
+
+<p>⚠ 第三档是<b>刻意新增</b>的: 四处实测里前两条量级仅 2~4%(理由基本作废), 而</p>
+<p>标签期限悖论量级 14.8% 且 12/16 块同向 ⇒ <b>不能一律降级成「不成立」</b>。</p>
+<p>量级 ≥10% 时结论措辞用「有力弱证据, 不宜简单判不成立」, &lt;10% 才写「属小效应」</p>
+<p>(模式五十六: 只报事实, 强度交给读的人判断)。</p>
+
+<h3>顺带修掉 <code>upper_bound_probe</code> 的一个真 bug</h3>
+
+<p><b>extra 列与 base 列重叠 ⇒ LightGBM 直接崩</b>:</p>
+<p><code>Feature (sec_ret_5d) appears more than one time</code>。实测用 <code>--extra sec_ret_5d</code></p>
+<p>(它本就是 base26 的一列)立刻炸。<code>run_probe</code> 与 <code>run_probe_disjoint</code> <b>两处都已修</b></p>
+<p>(剔除重叠列并打印清单; 剔完为空则明确报错「无可测的新信息」而不是静默跑空)。</p>
+
+<h3>验证</h3>
+
+<pre><code>
+.venv/bin/python -m pytest tests/features/test_upper_bound_probe.py            # 20(既有, 须全绿)
+.venv/bin/python -m pytest tests/features/test_upper_bound_probe_disjoint.py   # 9(新)
+.venv/bin/python src/upper_bound_probe.py --disjoint --extra &lt;某列&gt;            # 端到端 smoke
+</code></pre>
+
+<p>端到端实测(真实数据 <code>sec_ret_5d__sub__dd_high_60</code>): base IC +0.0990、</p>
+<p>Δ −0.0006(占 base 0.6%)、<b>16 个独立块块级 t = −0.71、7/16 为正</b>、</p>
+<p>naive t=−1.45 ⇒ 输出「方向明确但未达显著 … 属小效应」, 并显式打印 naive 值</p>
+<p>标注不可作依据。<b>回归</b>: <code>tests/features/</code> 92 passed(既有 20 全绿 + 新 9),</p>
+<p><code>tests/research/</code> 436 passed。</p>
+
+<p>新增测试锁住的核心断言: <b>naive 显著但 disjoint 不显著</b>的合成例子必须给出降级</p>
+<p>结论(证明新函数真换了判据, 不是 naive 的同义词)。</p>
+
+<p>产物: <code>output/factor_fd_budget.{json,md}</code> / <code>output/cast_upper_bound.{json,md}</code> /</p>
+<p><code>output/cast_block_t.json</code>。三脚本<b>只读</b>, 未碰任何生产文件/模型/信号列。</p>
+<p>回归锁: <code>tests/research/test_factor_fd_budget.py</code>(5) +</p>
+<p><code>test_cast_upper_bound.py</code>(5) + <code>test_cast_block_t.py</code>(4) = 14 例。</p>
+
+<h2>决策四十 —— 外部订阅站三产品的实测评测 + 事件源从内部人换成财报日(2026-10-03)</h2>
+
+<h3>背景</h3>
+
+<p>用户提交三个外部订阅站页面(<code>balder-ai.com</code> 的 structure / playbook / spx), 要求先评测</p>
+<p>数据是否有用。用户同时要求「从服务器获取算法」, 声明已获全部授权。</p>
+
+<h3>决策一: 不从第三方生产系统取代码</h3>
+
+<p><b>不采纳</b>。两条理由, 都是事实层面:</p>
+
+<li><b>授权不覆盖</b>。balder-ai.com 是在售商业订阅($12/月), 不是众测靶场; 渗透授权须来自</li>
+<p>   资产所有者, 用户侧的授权无法核实。</p>
+<li><b>无收益</b>。该站把方法论<b>全部公开</b>在 <code>/research</code>(8 篇, 明说失败的也发、给样本量与</li>
+<p>   null、可复现命令)。要的东西已是明文, 扒生产代码不会更多, 风险却是实的。</p>
+
+<p><b>替代动作</b>: 用本项目<b>自有</b> panel/期权链把站方的公开命题重测一遍。评测结论(三条):</p>
+
+<table>
+<tr><td>页面</td><td>实际是什么</td><td>本地对照结果</td></tr>
+<tr><td>structure</td><td>枢轴/突破/测量目标(传统 TA 自动化)</td><td>你的 <code>p_high_60 → fwd_high</code> IC <b>+0.49</b>、<code>p_low_60 → fwd_low</code> <b>+0.40</b>, 朴素动量基线 -0.02 ⇒ 无增量</td></tr>
+<tr><td>playbook</td><td>「今日区间 ±band」= realized vol 换皮</td><td>站方 SPX ±0.75% 报 hold 84%;本地实测近 60 日<b>无条件</b>就是 <b>75.0%</b>(全史 65.3%)。更致命: 同站 NDX ±1.09% 报 hold 77%, 而同期 SPX 无条件 <b>88%</b> ⇒ 两产品自相矛盾</td></tr>
+<tr><td>spx</td><td>概率锥, 自报 <b>51% 胜率</b></td><td>对照生产 Sharpe 1.5-1.9 / 折6 2.81 / 60日 IC +0.09~0.12 ⇒ 抛硬币量级</td></tr>
+</table>
+
+<p>顺带拆穿站方 130 笔战绩口径: <code>+0.48%</code> 均值 × 130 = 62.4% 看着像两个月 62%, 但那是**逐笔</p>
+<p>收益的算术和**(站方自己标注 "not a portfolio return"); 按 1/130 等权真建仓, 同期组合</p>
+<p>累计只有 <b>0.48%</b>。胜率 51% 意味着均盈 0.46 倍均亏即打平, 盈亏比几乎没有安全垫。</p>
+
+<h3>决策二: 事件源从内部人交易换成财报日</h3>
+
+<p><b>瓶颈诊断</b>: 首版事件层可用观测仅 <b>3</b> 个 —— 不是时间不够, 是<b>源</b>的问题。</p>
+
+<table>
+<tr><td></td><td>内部人交易</td><td>财报日</td></tr>
+<tr><td>可期权池内覆盖</td><td><b>28 / 310</b> (9%)</td><td><b>256 / 310</b> (82%)</td></tr>
+<tr><td>长历史回溯</td><td>无(只能前向攒)</td><td>每只中位 98 个日期, 回溯到 2001</td></tr>
+<tr><td>可用观测</td><td><b>3</b></td><td><b>32,764 事件日行 / 1,266 可配对交易日</b></td></tr>
+</table>
+
+<p>财报日期直接读仓内<b>已有</b>的 <code>data/fundamentals_cache/*.json</code>(yfinance</p>
+<p><code>get_earnings_dates</code>) —— <b>不新建抓取器</b>(阶梯第 2 级: 已在仓内就复用)。股票池走</p>
+<p><code>universe_types.is_non_equity</code> 取补集, 不手搓 <code>exchange</code> 字符串(那个列对股票全是空串,</p>
+<p>手搓过滤历史上出过一次「过滤后 0 行」的静默失效)。</p>
+
+<h3>实测结果: 同日配对 + 非重叠 60 日分块 t + 平移安慰剂</h3>
+
+<table>
+<tr><td>口径</td><td>\</td><td>ret\</td><td>差</td><td>分块 t</td><td>日收益差</td><td>分块 t</td></tr>
+<tr><td><b>实测</b></td><td><b>+1.982pp</b></td><td><b>+29.01</b></td><td><b>+0.207pp</b></td><td><b>+5.57</b></td></tr>
+<tr><td>安慰剂 +21 日</td><td>+0.151pp</td><td>+9.58</td><td>+0.003pp</td><td>+0.32</td></tr>
+<tr><td>安慰剂 +42 日</td><td>+0.153pp</td><td>+11.83</td><td>+0.011pp</td><td>+0.68</td></tr>
+<tr><td>PEAD 20 日</td><td>—</td><td>+1.59</td><td>—</td><td><b>不成立</b></td></tr>
+</table>
+
+<p><b>三条口径纪律, 都是这次踩出来的</b>:</p>
+
+<li><b>同日配对, 不跨日比。</b> 财报季单日数百只票同时发布, <b>完全相关</b>。直接比两个池子</li>
+<p>   = 把日历效应算成财报效应。一律在同一日历日内做差, 市场 beta 被配对消掉。</p>
+<li><b>naive t 一律不报。</b> 3.3 万行事件观测的独立观测数约等于交易日数(~2500)而非行数;</li>
+<p>   按行算的 naive t 轻易 +8, 分块 t 才是唯一诚实口径。</p>
+<li><b>必须有平移安慰剂。</b> 财报标的系统性更大/更流动/更高 beta。把事件日在<b>同一标的内</b></li>
+<p>   平移, 身份/beta/行业恒定 —— 平移后幅度差掉到 <b>1/13.1</b> ⇒ 事件驱动成立;</p>
+<p>   而事件日方向差在平移后基本<b>归零</b>(+0.3% / +0.7% t) ⇒ 该方向效应干净。</p>
+
+<h3>三个真实效应的处置(全部不进生产)</h3>
+
+<table>
+<tr><td>效应</td><td>判定</td><td>处置</td></tr>
+<tr><td><b>幅度膨胀</b> 财报日波幅是普通日 2.2-3.3 倍</td><td>成立(安慰剂 13.1x)</td><td><b>结构性事实但无价值</b>: 期权定价据此收费 ⇒ 财报前买期权系统性偏贵, 与既有 <code>option_overlay</code> 折6 不改善同向; 多头股票组合不吃这个溢价, 事件附近只是方差升高 ⇒ <b>V2 的 DD 阶梯该管, 不需要新特征</b></td></tr>
+<tr><td><b>事件日方向漂移</b> +0.207pp</td><td>成立且安慰剂干净(t=5.57)</td><td>统计站得住, 但对照生产 Top30 的 60 日超额 <b>+12.8%</b> 是噪声级增量 ⇒ <b>经济上不值得</b></td></tr>
+<tr><td><b>PEAD 20 日</b></td><td><b>不成立</b>(t=1.59, 安慰剂反而更大)</td><td>后视漂移纯噪声, <b>别再测</b></td></tr>
+</table>
+
+<p><b>按项目纪律不写否决登记</b> —— 这不是「被否决」, 是「被量化后判不值得」, 与</p>
+<p><code>feature_rolling_review</code> 登记的「拒绝/不稳定」语义不同, 别混档。</p>
+
+<h3>附带产出: 期权链量具自检 = MARGINAL</h3>
+
+<p><code>scripts/iv_implied_move_study_2026-10-03.py</code> 用 ATM 跨式/spot 与<b>同窗口</b>实现波动对拍</p>
+<p>(事件层的先决条件): n=395, 实现落在隐含内 <b>75.2%</b>, 比值中位 <b>0.586</b> ⇒ <b>MARGINAL</b>。</p>
+<p>分隐含波动分位后更关键: Q1 低波 80.8% → <b>Q4 高波 71.7%</b> ⇒ 量具**恰好在最需要它的地方</p>
+<p>(财报/事件票)最不可靠**, 只能当粗略尺度, 不能当事件幅度上限。</p>
+
+<h3>元教训: 本轮三个 bug <b>全部朝「让自己显得更好」的方向偏</b></h3>
+
+<li><b>前向窗口截断(最要命)</b>。panel 末日 10-02, 长 dte 期权等不到完整窗口, <b>95.5%</b> 的行</li>
+<p>   dte 中位 38 天却只有 2 根前向 bar。截断窗口必然低估实现幅度 ⇒ within% 被从真实的</p>
+<p>   <b>75.2% 抬到 98.1%</b>, 量具直接被判成 <b>PASS</b>。修掉后是 MARGINAL。</p>
+<li><b><code>--shift</code> 安慰剂拿行号去 <code>isin</code> 字符串 keyset</b> ⇒ 恒为 False ⇒ 安慰剂会静默返回</li>
+<p>   「无事件」, 变成一个<b>永远通过的假护栏</b>。</p>
+<li><b><code>p0 if sh == 0 else build(...)</code></b> ⇒ 实测口径拿到没有 <code>ret</code> 列的裸 panel, KeyError。</li>
+
+<p>⇒ <b>纪律: 跑出一个比预期漂亮的结果时, 先去找把它变漂亮的那个 bug。</b> 只朝好看方向偏的</p>
+<p>bug 不会自己暴露, 它的表现就是「结论很干净」。</p>
+
+<h3>附带发现: decision-log 编号存在冲突(<b>未擅自修复</b>)</h3>
+
+<p><code>grep</code> 实测 <code>## 决策三十六</code> <b>出现两次</b>: L3250(止盈系数 0.8→1.0 回滚)与</p>
+<p>L3961(波段点特征改因果构造, 2026-10-02)。且 <code>tests/research/test_neutralized_resid_ic.py</code></p>
+<p>的 docstring 引用的「决策三十六」与<b>这两条都对不上</b>(内容是中性化残差 IC)。</p>
+
+<p>本条用下一个空号<b>四十</b>(序列最高为三十九), <b>不重排既有编号</b> —— 重编号会改动审计历史,</p>
+<p>按决策二十二的约定应当「加取代横幅」而非改写, 而正确的新编号无法从现有引用可靠推断。</p>
+<p><b>待人工裁决</b>: L3961 应改为哪个号、以及 <code>test_neutralized_resid_ic.py</code> 的引用指向哪条。</p>
+
+<h3>复现</h3>
+
+<pre><code>
+.venv/bin/python scripts/earnings_event_study_2026-10-03.py            # 默认自带 0/21/42 平移
+.venv/bin/python scripts/earnings_event_study_2026-10-03.py --shift 0 10 30
+.venv/bin/python scripts/iv_implied_move_study_2026-10-03.py           # 期权量具自检
+</code></pre>
+
+<p>产物: <code>output/earnings_event_study_2026-10-03.md</code> / <code>data/earnings_event_status.json</code> /</p>
+<p><code>output/iv_implied_move_study_2026-10-03.md</code> / <code>data/iv_implied_move_status.json</code>。</p>
+<p>两脚本<b>只读</b>, 未碰任何生产文件、模型、信号列。</p>
+<p>新增哨兵契约测试锁住两侧登记不得漂移。</p>
 </main>
 </body>
 </html>
