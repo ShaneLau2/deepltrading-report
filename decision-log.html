@@ -29,7 +29,7 @@ li { margin:3px 0; }
 </head>
 <body>
 <main>
-<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-10-03 15:12 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
+<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-10-10 15:51 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
 <h1>历史决策记录</h1>
 
 <p>本文件只记录实验结果和已否决方案，不代表当前生产配置。</p>
@@ -4581,7 +4581,514 @@ seen_low    = (lo.shift(w) == lo_min_to_t).fillna(False)
 <p>产物: <code>output/earnings_event_study_2026-10-03.md</code> / <code>data/earnings_event_status.json</code> /</p>
 <p><code>output/iv_implied_move_study_2026-10-03.md</code> / <code>data/iv_implied_move_status.json</code>。</p>
 <p>两脚本<b>只读</b>, 未碰任何生产文件、模型、信号列。</p>
+
+<h2>2026-10-06 — 竞技场四角色<b>特征集采纳</b>(add/drop 双通路)全量落地: 三角色各 drop 一列重训, high 维持现役</h2>
+
+<p><b>授权与边界</b>: 批准计划 <code>docs/plan-arena-add-drop-adoption-2026-10-06.md</code>(随 <code>7a7eaa7</code> 入库)。</p>
+<p>本轮只做<b>四角色特征集采纳重训</b>, <b>不换冠</b>(ens→ens_cat 仍走 12-21 五闸, 台账 verdict=KEEP</p>
+<p>不变)、<b>不做二阶 drop 组合</b>、不刷新 promotion_gates/purged_wf 数据。执行前把本轮 scope</p>
+<p>追加进 <code>data/champion_term_state.json → owner_override.scope</code></p>
+<p>(<code>arena_feature_adoption_retrain_four_roles_2026_10_06_no_champion_switch</code>)+ 一条 disclosure;</p>
+<p><code>_owner_override_check</code> 复核字段仍齐全、<code>frozen_guard.retrain_allowed()</code> 仍 True。</p>
+
+<p><b>代码(四个 commit + 一个测试隔离 commit)</b></p>
+
+<table>
+<tr><td>commit</td><td>内容</td></tr>
+<tr><td><code>7a7eaa7</code></td><td>Phase 0: 任期第三扇门 <code>champion_term._owner_override_check</code>/<code>gate_decision</code>;<code>retrain.save_model</code> fail-closed <code>feat_cols</code>(漏传 ⇒ 拒写)</td></tr>
+<tr><td><code>ce0c421</code></td><td>Phase 1: <code>dataset_io.resolve_*_feature_cols(drop_cols)</code>(drop 不在集合 ⇒ <code>KeyError</code> fail-closed)、<code>arena_roles --drop-search</code>(33 个单列淘汰候选)、<code>stage_arena</code> 四角色+<code>--drop-search</code>、sel 无现役行时回退 <code>sel__base</code> 作护栏基准(消除 <code>prod_ic=0.0/0.0</code> 闸门被 trivially 满足)</td></tr>
+<tr><td><code>dcace0d</code></td><td>Phase 2: <code>retrain --drop-cols</code>、采纳护栏抽纯函数 <code>adoption_gate</code>(无 <code>--adopt</code>/无证据/证据集合与本次变更不一致/双窗不过 ⇒ 拒)、sel 采纳路径跳过 <code>needs_retrain</code>(IC 退化)检查、<code>stage_retrain</code> 角色循环加 <code>sel</code> + 传 <code>--drop-cols</code> + <b>promotion_gates BLOCKED 的 owner_override 可审计旁路</b>(日志大声写「旁路 promotion_gates, 依据 owner_override@…」;残缺/无 override/台账读不出 维持 BLOCKED,<b>不改 promotion_gates 本身</b>)</td></tr>
+<tr><td><code>590ccfc</code></td><td>Phase 3: <code>signals.backfill_missing_features</code>/<code>backfill_feature_gaps</code> —— config 特征集缺列按 <code>data/feature_candidates.json</code> 的 expr 走 <code>feature_rolling_review.compute_feature</code> <b>现算回填</b>(唯一实现 + <code>_expr_cols</code> 路由, 不写第二份公式);全空结果/merge 未对齐判失败且<b>不留全空假列</b>;选股缺列 <code>SystemExit</code> 大声失败、角色缺列显式警告后跳过推理</td></tr>
+<tr><td><code>d39fcfb</code></td><td>三处「真闸门快照」用例改双向断言(生产台账 10-05 写入 override 后, 原「今天必须拒」的前提已变)</td></tr>
+<tr><td><code>dff6df4</code></td><td>Phase 4 收尾: <b>采纳分叉落地解析层</b>(<code>ROLE_ADOPTED_*</code> 单一事实源 + <code>resolve_role_feature_cols</code> 档位±采纳±调用方, 重放 drop 幂等);retrain 守卫/写盘、backfill 权威、arena drop-search 基础集全部改按角色解析;3 处档位层断言测试同步 + 测试隔离修复(缺列报告漏写生产 output/)+ sel 重训产物</td></tr>
+</table>
+
+<p><b>执行结果(Phase 4, 2026-10-06 08:58→11:30 CST)</b></p>
+
+<table>
+<tr><td>角色</td><td>冠军</td><td>IC 近 / 长(现役基准)</td><td>动作</td><td>重训结果</td></tr>
+<tr><td>sel</td><td><code>sel__drop__sec_ret_5d</code></td><td>0.0855 / 0.1193(<code>sel__base</code> 0.0648 / 0.1124)</td><td><code>--drop-cols sec_ret_5d --adopt</code></td><td>护栏放行 · validate PASSED Test IC <b>+0.1220</b> · config 33→32 列</td></tr>
+<tr><td>high</td><td><code>high__prod</code>(现役)</td><td>0.3936 / 0.4113(全场最高)</td><td><b>无变更</b></td><td>不重训(现役连冠 11 周;挑战者最高 <code>high__drop__sec_ret_60d</code> 0.3524/0.3901 未胜过)</td></tr>
+<tr><td>low</td><td><code>low__drop__sec_ret_60d</code></td><td>0.3497 / 0.2955(prod_sym 0.3293 / 0.2811)</td><td><code>--drop-cols sec_ret_60d --adopt</code></td><td>护栏放行 · PASSED <b>+0.2937</b> · 32 列</td></tr>
+<tr><td>timing</td><td><code>timing__drop__sec_ret_60d</code></td><td>0.3385 / 0.2935(prod_sym 0.3341 / 0.2881)</td><td><code>--drop-cols sec_ret_60d --adopt</code></td><td>护栏放行 · PASSED <b>+0.3060</b> · 32 列</td></tr>
+</table>
+
+<p><b>三条观察</b></p>
+
+<li><b>本轮唯一产生采纳的是新增的淘汰通路</b>: 三个胜出者全是 drop(删 <code>sec_ret_5d</code> / <code>sec_ret_60d</code>),</li>
+<p>   10-05 的 add 冠军(<code>low__vol_12m_div_log_mc__mul__…</code> 等)本轮全部掉到第 2+ 名。只做 add 的</p>
+<p>   旧流水线在本轮会得到「无采纳」。</p>
+<li><b>四角色特征集从「同为 33 列」变成各自不同</b>(sel 32 / high 33 / low 32 / time 32, 各自删的</li>
+<p>   <code>sec_ret</code> 列还不同)。今后任何「四角色特征一致」的假设一律以 <code>models/*_config.json</code> 自证,</p>
+<p>   别再拿 <code>feat_set=swing</code> 当「列集合相同」的证据; <code>test_role_config_selfcertify</code> 已锁自证通路。</p>
+<li><b>闸门是叠着把关的, 没有因为旁路而失守</b>: frozen_guard(任期)靠 owner_override 放行、</li>
+<p>   promotion_gates(换冠)被同一条 override <b>留痕旁路</b>、而 <code>gate_adoption</code>(双窗胜现役)、</p>
+<p>   poison audit、<code>validate_model</code> 三道<b>原样保留并全部实际把关</b>(三次重训都打印「✅ 采纳护栏放行:</p>
+<p>   双窗口 OOS 全面胜出(证据 …)」, 这条留痕是本轮补上的 —— 原先只有拒绝出声)。</p>
+
+<p><b>回滚</b>: <code>data/models_pre_adopt_20261006_0852/</code>(采纳前 models/ 全量快照, 5.5M)一条 <code>cp -R</code></p>
+<p>即回滚; 另有 retrain 自带的 <code>models/<i>_20261006_</i></code> 单文件备份。signals 读 config 自证 ⇒ 旧</p>
+<p>config 配旧权重天然一致。</p>
+
+<p><b>验收</b>: 四角色 <code>--validate-only</code> 全 PASSED;<code>test_role_config_selfcertify</code> + <code>test_retrain_no_silent_26</code> + adopt/adoption gate 45 passed;<code>tests/signals</code> 546 passed、<code>tests/web</code> 207 passed;</p>
+<p><code>signals.py --out-suffix _adoptcheck</code> 试跑 rc=0, 无「config 声明 N 特征/数据集仅有 M」与</p>
+<p>「角色模型跳过」告警, <code>M_TIME</code> 972 只正常产出, 四模型全部出预测。</p>
+
+<p><b>本轮看到但未处理(与本决策无关)</b>: ① <code>data/signal_calibration.json</code> 的 <code>target_calibration=NaN</code></p>
+<p>(signal_archive 10-06 05:07 写) ⇒ signals 按 1.0 <b>不收缩目标价</b>并出告警, 属既有产物问题;</p>
+<p>② <code>scripts/regression.py --quick</code> 仍有 10 处红, 全部由本计划<b>之外</b>的改动引起(aaba4de 的</p>
+<p><code>data_fingerprint_scan</code> 静默注解基线 ×3、<code>retrain</code> subprocess cwd 基线 ×2、<code>pit_ab_test.py</code></p>
+<p>入盘未同步 <code>experiment-index</code> ×2、<code>upper_bound_probe</code> 写死切点 ×1、生产数据驱动的 render</p>
+<p>快照 ×1), 留给对应改动的归属处理。</p>
 <p>新增哨兵契约测试锁住两侧登记不得漂移。</p>
+
+<p><b>4.7 采纳分叉落地到解析层(2026-10-06 收尾, 消除「同一事实在两处各说各话」)</b></p>
+
+<p>采纳一落地, <code>feat_set=swing</code> 就<b>不再等于</b>「四角色同一套列」: sel/low/timing 各 32 列且删的</p>
+<p><code>sec_ret</code> 列还不同, high 仍 33。仍按档位层 <code>resolve_feature_cols(ROLE_FEAT_SET[role])</code> 解析的</p>
+<p>地方会算出 33, 与盘上 config 的 32 对不上 —— 后果有两种, 都不可接受:</p>
+<p>普通重训被 B 守卫<b>误拦</b>(33≠32 ⇒ 每次都要求 <code>--adopt</code>), 或反向<b>把采纳静默抹平</b>。</p>
+
+<p>修法 = 分叉只记在一处, 所有消费方从那一处取:</p>
+
+<li><code>dataset_io.ROLE_ADOPTED_ADD/DROP</code>(全空 / sel·low·timing 各一条 drop)= <b>采纳表单一事实源</b>;</li>
+<p>  <code>resolve_role_feature_cols(role, add, drop)</code> = 档位 ± 采纳表 ± 调用方增减。</p>
+<p>  <b>重放已采纳的 drop 幂等</b>(不是写错名, 是重跑同一份证据); 其余未知 drop 仍 <code>KeyError</code> fail-closed;</p>
+<p>  角色名不认识也炸(不回退 —— 回退就是本层要消除的耦合)。</p>
+<li>消费方全部改按角色解析: <code>retrain</code> 的 B 守卫与 Step 2 <code>feat_cols</code>(原先两处同源但都是档位层)、</li>
+<p>  <code>scripts/backfill_role_feature_cols.py</code>(权威 = <code>resolve_role_feature_cols(role)</code>, config 变成<b>被校验的目标</b>而不是权威来源)、</p>
+<p>  <code>arena --drop-search</code> 的基础集(与 <code>stage_arena</code> 同一入口)。</p>
+<li>同步改 3 个把「档位层解析结果 == 生产 config」写死的测试: <code>test_retrain_no_silent_26</code> 源码锁</li>
+<p>  (现在反向也锁: 不许再出现档位层解析)、<code>test_retrain_role_sel_guard</code> A/B、</p>
+<p>  <code>test_arena_drop_search</code>(基础集改按被测角色取, 另加一条「sel 已删的列不再生成候选」)。</p>
+
+<p>铁律: <b>加/删采纳表一条必须同轮完成三件事</b> —— 改表 + 重训该角色 + config 自证一致</p>
+<p>(未伴随重训的改表 = 拿新列名喂旧权重)。<code>test_role_config_selfcertify</code> 与</p>
+<p><code>test_role_feature_cols_parity</code> 锁结果一致, <code>test_role_feature_cols_layer</code> 锁「分叉只许来自采纳表」。</p>
+
+<p>验收: <code>retrain --dry-run</code> 四角色全部走通(无「落盘前置校验跳过」也无 ⛔);</p>
+<p><code>backfill_role_feature_cols.py --check</code> rc=0「无需补写」;</p>
+<p><code>tests/model tests/web tests/signals</code> <b>2236 passed</b>、<code>tests/research</code> <b>490 passed</b>;</p>
+<p><code>scripts/regression.py --quick</code> 仍为既有 10 处基线残留红(与上文②逐条一致, 无新增)。</p>
+
+<p><b>4.8 采纳后核验发现时点单位错位(2026-10-06 12:5x 当日发现当日修, 提交 <code>92afc31</code>)</b></p>
+
+<p>盘后链首跑是 <b>10-06 16:30 ET(= 07 日 04:30 CST)</b>, 当时还没跑 ⇒ 先用生产同款</p>
+<p><code>signals.py --top 30 --out-suffix _preflight</code> 预演。结果: **rc=0、四角色覆盖 100%、</p>
+<p>IC 闸门全过, 但 <code>fwd_days_to_high/low</code> 972/972 只全是 1.0**(采纳前 2.8–16.4 天)。</p>
+
+<li><b>根因</b>: <code>retrain.py</code> 自 <code>dbdd9ff</code> 起把时点标签 <code>clip(1,90)/90</code>(抄</li>
+<p>  <code>arena_roles.ROLE_CFG["timing"].scale=90.0</code> 的<b>场内</b>口径), 而生产契约是<b>天数</b></p>
+<p>  —— <code>train_time.py CLIP=(0,90)</code> 写出的历任 time_model 都是天数, signals 端</p>
+<p>  <code>_time_pred_to_days = np.clip(p, 1, 90)</code> 按天数消费 ⇒ 归一化后的预测 0.03–0.23</p>
+<p>  被全部 clip 成 1。<b>采纳是第一次把 retrain 训出来的 timing 模型送上生产</b>,</p>
+<p>  两套尺度的断层才第一次暴露(此前 time_config 由 train_time.py 写)。</p>
+<li><b>为什么既有闸门一个都没拦</b>: 覆盖率 100%(列在、值非空)、<code>validate_model</code> 算的是</li>
+<p>  <b>IC = 秩相关(尺度不变)</b> ⇒ Test IC +0.3060 照样 PASSED。**IC 闸门天生抓不到单位</p>
+<p>  错位**;唯一现场特征是「输出常量」, 旧核验里没有任何一项看它。</p>
+<li><b>修复</b>: ① <code>retrain.scale_train_label</code> 纯函数 —— 时点标签 <code>clip[0,90]</code> <b>保持天数</b></li>
+<p>  (与 <code>train_time.py</code> 逐值同口径), 收益类仍 <code>clip[-1,1]</code>; ② 重跑 timing 采纳重训</p>
+<p>  (<code>--adopt</code> 同证据放行): <b>Test IC +0.3011 / val 0.3722 / 32 列 PASSED</b>(与 /90 版</p>
+<p>  的 +0.3060 几乎相同 —— 再次印证 IC 不随尺度变); ③ 预演复测: ⬆D 2.98–15.42、</p>
+<p>  ⬇D 3.80–16.83(与采纳前同量级), 四角色 100%, 日志无缺列/跳过告警。</p>
+<li><b>防复发(两道)</b>: <b>跨端契约测试</b> <code>test_retrain_timing_label_scale</code>(5 例, 核心是</li>
+<p>  「训练标签尺度必须原样穿过 signals 的 clip, 不被压平」)+ <b>盘后自动核验第 7 项</b></p>
+<p>  <code>verify_daily_health</code> 新增「信号产出核验」: 四角色输出列齐全 / 覆盖 ≥90% /</p>
+<p>  <b>非常量</b> + 四份 config 自证 <code>resolve_role_feature_cols(role)</code> + 最近一次 signals</p>
+<p>  运行段日志无缺列跳过告警(盘后 5c 自动跑, 失败推手机)。</p>
+<li><b>同步改了一处锁错契约的旧测试</b>: <code>test_timing_labels_not_clipped_to_constant</code></li>
+<p>  原断言标签落在 <code>(0,1]</code> —— 它锁住的正是 bug 本身(原始意图只是「不得 clip(-1,1)」)。</p>
+<p>  改为锁「天数 [0,90] 且 max&gt;1」。</p>
+
+<p>⚠ <b>教训入册</b>: 训练侧与消费侧的<b>单位/尺度</b>不在 IC、覆盖率、闸门的任何一环里,</p>
+<p>只能靠「同一契约的两端测试」锁;新角色接入生产时, 先问清「这个模型吐出来的数是什么单位」。</p>
+
+<h2>2026-10-06 — 计划 B: 模型轴 + 标签轴竞技场七场裁决(3 提名/4 维持)+ <b>三处「终态悬空/判据漏项」修复</b>(未切换生产)</h2>
+
+<p><b>授权与边界</b>: 批准计划 <code>docs/plan-role-model-label-arena-2026-10-06.md</code>(Phase 0 备份 → 4 设计+实跑,</p>
+<p>commits <code>5e9fa72</code>→<code>fbd1b39</code>→<code>6f77fe6</code>→<code>f245459</code>)。<b>本轮不切换任何生产</b> —— 模型轴三份提名只是</p>
+<p>「双窗选择层」的胜出(审稿④), 切换层 = 影子前向 60 日确认, 尚未起跑。</p>
+
+<p><b>Phase 4 七场实跑(18:29–18:56 CST, 全 rc=0;裁决全文 <code>docs/arena-phase4-verdict-2026-10-06.md</code>)</b></p>
+
+<table>
+<tr><td>轴·角色</td><td>冠军</td><td>IC 近/长</td><td>基准 <code>prod_sym</code> 近/长</td><td>裁决</td></tr>
+<tr><td>模型·high</td><td><code>ens_cat</code></td><td>0.3583/0.3938</td><td>0.3492/0.3896</td><td>提名(+0.0091/+0.0042)</td></tr>
+<tr><td>模型·low</td><td><code>ens_cat</code></td><td>0.3681/0.2988</td><td>0.3497/0.2955</td><td>提名(+0.0184/+0.0033)</td></tr>
+<tr><td>模型·timing</td><td><code>ens</code></td><td>0.3402/0.3011</td><td>0.3385/0.2935</td><td>提名(+0.0017/+0.0076)</td></tr>
+<tr><td>标签·high/timing/sel</td><td><code>prod_sym</code>(现役组)</td><td>—</td><td>—</td><td>维持, 0 候选</td></tr>
+<tr><td>标签·low</td><td><code>aux_high</code></td><td>0.3618/<b>0.2910</b></td><td>0.3497/<b>0.2955</b></td><td><b>不采纳</b>(长窗输基准)</td></tr>
+</table>
+
+<p>两条方法论硬读数: ① <code>full</code> 整组替换类<b>四角色全灭</b>(双窗常深负, 如 high <code>full_low</code> −0.298/−0.283)</p>
+<p>⇒ 「primary 标签不可被代理量替换」拿到反证; ② timing 标签轴最强挑战者差 <b>0.14 量级</b></p>
+<p>⇒ <code>days_to_high/low</code> 暂无对手。跨轴 IC <b>不可比</b>(同名 <code>timing__prod_sym</code> 两轴 0.3385 vs 0.3282,</p>
+<p>因标签轴行过滤 = 全部候选标签并集, 尾部未成熟 ⇒ 每窗少 52 交易日)—— 判定只在场内有效。</p>
+
+<p><b>实跑暴露并修复的三处 bug(同一族: 「跑完了」必须出声)</b></p>
+
+<li><b>判据漏项(高危)</b>: <code>evidence_needed</code> 只实现了「非现役 + 达标」, 计划 §2 第二条硬判据</li>
+<p>   <b>「双窗都胜 <code>{role}__prod_sym</code>」从未落进代码</b> ⇒ low 标签场把长窗输基准的 <code>aux_high</code> 写成了</p>
+<p>   「双窗胜出」候选(文件/状态/报告<b>三处同时说谎</b>, 且会被 §4.3 闸门当合法输入)。修: 拆</p>
+<p>   <code>is_incumbent_champion</code>(轴相关现役判定)+ <code>beats_baseline</code>(双窗严格 <code>&gt;</code>, 缺基准/任一窗 IC</p>
+<p>   非有限 ⇒ <code>False</code> <b>fail-closed</b>, 平局不算胜); <code>build_report</code> 同步拆四支渲染。误写候选<b>作废留档</b></p>
+<p>   <code>data/tmp/rejected_candidates/</code>(不删); 模型轴三份经新判据复核<b>依然合法</b>。</p>
+<li><b>终态悬空(中危)</b>: <code>arena_model_family.main</code> 只在 <code>not has_qual</code> 写 <code>no_winner</code>, 漏掉</li>
+<p>   「冠军 = 现役标签组/族 ⇒ 维持」这个<b>最常见终局</b> ⇒ high/timing/sel 三个标签场状态悬在</p>
+<p>   占位符 <code>running</code>, 下游分不清「跑完维持」与「压根没跑」。修: 改「<b>没写采纳候选必落终态</b>」+</p>
+<p>   <code>no_winner_detail()</code> 纯函数四分支。</p>
+<li><b>特征轴同族(收尾自查发现)</b>: <code>arena_roles.main</code> 的 <code>champ_is_prod</code> 分支同样只打印不写状态</li>
+<p>   ⇒ <code>adopted_high_status.json</code> 从 09:41 悬 <code>running</code>; 顺带收紧 <code>write_adopt_candidate</code> 失败语义</p>
+<p>   —— 旧实现返回 <code>Path()</code>(<b>真值</b>), 调用方误报「已写候选」, 改返回 <code>None</code> 并落 <code>no_winner</code>;</p>
+<p>   三处 <code>_write_role_status</code> 补 <code>not args.smoke</code> 守卫(smoke 不得写状态)。</p>
+
+<p><b>修复方式 = 重推导, 不重跑</b>: 重跑会往 <code>champion_{axis}_{role}_history.json</code> 追加同日 entry,</p>
+<p>污染审稿⑦ 的<b>累计 trial 分母</b>与连冠 streak。改用修复后的同一套纯函数从已落盘 CSV 重推导</p>
+<p>(<code>data/tmp/phase4_status_repair.py</code>): 4 场状态纠正、low 报告判定行改 ⚠、<b>其余三场报告逐字未变</b></p>
+<p>(反证重推导与原跑一致)。测试 <code>tests/ops/test_arena_model_family.py</code> 38→<b>40 绿</b> +</p>
+<p><code>tests/test_arena_roles.py</code> 新增 <code>TestTerminalStatusNeverStuck</code>(源码锁终态必落 + 写盘失败语义)。</p>
+
+<p><b>Web 展示(Phase 5)</b>: <code>evolve_manager._axis_statuses()</code> 汇总三轴 11 份</p>
+<p><code>adopted_{role}[_{axis}]_status.json</code> → <code>evolve_overview.arena_axis_status</code>,</p>
+<p><code>research.js</code> 渲染「三轴采纳状态」卡片(won 绿 / running 黄 / rejected 红)。</p>
+<p><b>缺文件的轴·角色不列</b> —— 「压根没跑」不许伪装成「跑完没人赢」(本次三处 running 悬空事故</p>
+<p>就是这两者混淆的代价); 只读不写。测试 <code>tests/web/test_console_staleness.py</code> ⑨ 三例(含源码锁</p>
+<p><code>evolve_overview</code> 必须透出)。</p>
+
+<p><b>验收</b>: 三处相关测试文件 103 passed;<code>node --check</code> research.js OK;<code>scripts/regression.py --quick</code></p>
+<p>= <b>10 红, 与基线逐条相同不增</b>(fold6_cut / experiment_index ×2 / silent_except ×3 /</p>
+<p>subprocess_cwd ×3 / render 快照);7 份状态现为 3 <code>won</code> + 4 <code>no_winner</code> + 特征轴 1 <code>no_winner</code> + 3 <code>won</code>,</p>
+<p><b>无残留 <code>running</code></b>。切换前新锚点 <code>data/backup_role_family_arena_20261006_193509/</code>(98 条 manifest,</p>
+<p>verify 0 漂移, 沙箱 apply 演练通过)。</p>
+
+<p>⚠ <b>未完成(切换生产前置)</b>: §4.4 三种子 mean±std(本轮优势仅 +0.002~0.018, 且 LGB/Cat 固定</p>
+<p><code>seed=1</code>、MLP 随机性未控 ⇒ 需先给训练入口加 <code>seed</code>)、§4.5 轴冠军 label×model 联合复验、</p>
+<p>§4.6 <b>影子前向 60 交易日</b>(审稿④)、§4.1 <code>adoption_gate</code> 家族版闸门、§4.2 signals LGB 路径自证。</p>
+
+<h2>2026-10-07 — 回归基线收敛 10 → 7 红: <code>subprocess_cwd ×3</code> 转绿(串联修复的确定性副作用, 非 flaky)</h2>
+
+<p><b>根因(已逐行验证)</b>: <code>tests/ops/test_subprocess_cwd.py</code> 三条红</p>
+<p>(<code>test_total_does_not_increase</code> / <code>test_module_does_not_exceed_its_baseline[retrain]</code> /</p>
+<p><code>test_baseline_is_exact</code>)同因 —— <code>retrain.py</code> 无 <code>cwd</code> 的「跑自家脚本」位点实测 **3 &gt;</p>
+<p><code>BASELINE[retrain]</code>=2**(2026-10-05 实测记录见 plan-cleanup §2.2)。本日特征↔模型流水线</p>
+<p>串联修复(commit <code>9b991ab</code>)把 retrain 训练前的<b>内联</b></p>
+<p><code>subprocess.run([sys.executable, "-u", "src/features.py"])</code> 重建块改为复用</p>
+<p><code>signal_archive.rebuild_dataset</code>, 该位点消失 ⇒ 位点 3 → 2(旧 [490=LGB worker,</p>
+<p>816=内联重建, 828=中毒闸] → 新 [490=LGB worker, 839=中毒闸]), 与基线<b>精确相等</b> ⇒ 三条转绿。</p>
+
+<p><b>稳定性判定</b>: 源码 ast 扫描, 与机器/时间/环境无关 ⇒ 确定性转绿。实测</p>
+<p><code>pytest tests/ops/test_subprocess_cwd.py</code> <b>27 passed</b>; 全仓 16 模块 17 位点 ==</p>
+<p><code>BASELINE_TOTAL=17</code>, <code>actual == expected</code> 精确匹配 True(<code>test_baseline_is_exact</code> 的</p>
+<p>「不许留余量」判据)。<code>BASELINE</code> dict <b>不改</b>(<code>retrain: 2</code> 现为精确值)。</p>
+
+<p><b>新基线 7 红</b>(清单口径, 替代 10-06 及此前的 10 红): fold6_cut、experiment_index ×2、</p>
+<p>silent_except ×3、render 快照; 入口 <code>scripts/regression.py --quick</code> 实测 7 failed +</p>
+<p><b>5711 passed</b>(5706 + 接缝新测 5, 守恒)+ 3 skipped。plan-cleanup 纪律 3 已同步。</p>
+<p>后续 subprocess_cwd 再红 = 有人新增无 cwd 位点, 按测试内提示处置。</p>
+
+<h2>2026-10-07 — 「守卫恒跳过」踩坑登记 + 剩余 7 红根因逐条定位(修复 2 条)</h2>
+
+<h3>① 守卫恒跳过(B 兜底读错落盘路径)—— 补 decision-log 独立条目</h3>
+
+<p><code>pipeline-runbook</code> 第 6 步已有实现史, 但决策日志一直无独立条目(清单项), 此处补登:</p>
+
+<p><b>坑</b>: <code>retrain.py</code> 的 <b>B 兜底</b>(<code>main()</code> 内落盘目标与特征集一致性前置校验)旧实现读</p>
+<p><code>DATA/config.json</code> = <code>data/config.json</code>, 而落盘目标是 <b><code>models/config.json</code></b> ——</p>
+<p><code>data/<i>_config.json</code> 四角色<b>全都不存在</b> ⇒ <code>exists()</code> <b>恒 False</b> ⇒ 本守卫</i>*形同虚设,</p>
+<p>从未真正校验过**。这类坑的隐蔽性在于: 守卫存在、测试也存在(只要断言「不一致才拦」),</p>
+<p>但输入永远不满足前置条件 ⇒ <b>恒走「跳过」分支</b>, 既不拦也不报 —— 与「恒绿守卫」同族。</p>
+
+<p><b>修复(2026-10-07)</b>: 改与 <code>save_model</code> 同源取 <code>_role_files(role)[2]</code>;实测四角色盘上</p>
+<p>与 <code>resolve_role_feature_cols</code> <b>全一致(32/33/32/32)</b> ⇒ 修正不误拦, 只有真不一致才开始拦。</p>
+<p>行为锁 <code>tests/model/test_retrain_pipeline_seam.py</code>(不一致必拦 / 一致放行, 两条行为断言)。</p>
+
+<p><b>教训(可推广判据)</b>: 校验型守卫上线前必须<b>反向自检一次</b> —— 人为制造一次「应拦而未拦」</p>
+<p>或直接打印前置条件的实际值。只看「测试绿」证明不了守卫在工作, 因为恒 False 的前置</p>
+<p>会让它永远走放行分支。</p>
+
+<h3>② 剩余 7 红根因逐条定位(清单「根因排查」项)</h3>
+
+<table>
+<tr><td>红</td><td>根因(已实测)</td><td>状态</td></tr>
+<tr><td><code>experiment_index</code> ×2</td><td><code>docs/experiment-index.md</code> 定稿于 <b>10-03</b>, 此后新增 3 个脚本未登记 ⇒ 标题与引言分母偏差: <code>test</code> 31→<b>32</b>(<code>pit_ab_test</code> 10-04)、<code>audit</code> 12→<b>13</b>(<code>fundamentals_poison_audit</code> 10-04)、<code>guard</code> 9→<b>10</b>(<code>spin_off_guard</code> 10-02)。测试按 <code>GROUPS</code> 顺序断言, <code>test</code> 先抛 ⇒ <code>audit</code>/<code>guard</code> 的偏差被掩盖(实为 3 家族偏差, 不止 2 红所见)</td><td>✅ <b>本日修</b>: 4 处计数 + 3 个新脚本如实登记(带上游: <code>fundamentals_poison_audit</code> ← <code>retrain.py</code>/<code>fundamentals_sec_backfill.py</code>;另两个无 import 方 = 手动) ⇒ <code>test_experiment_index_families</code> <b>4 passed</b></td></tr>
+<tr><td><code>fold6_cut</code></td><td><code>src/upper_bound_probe.py:212</code> 硬编码 <code>DISJOINT_CUT = "2022-01-03"</code>(<code>:393</code> 形参默认值引用它), 测试要求走 <code>dual_validate.oos_since_flag()</code> 现算</td><td>⏳ 未修(改默认值需同步 :400 docstring 与 :469 打印, 下轮)</td></tr>
+<tr><td><code>silent_except</code> ×3</td><td>同一处: <code>src/data_fingerprint_scan.py:139</code> 的 <code>except Exception: continue</code>(日期列探测)—— 窗口内缺「故意静默」四字 ⇒ <code>unannotated_sites</code> 报; 且 <code>_scan_short</code> 计为短 try 静默点, <code>SHORT_TRY_BASELINE["data_fingerprint_scan.py"]</code> 未登记(基线 0 vs 实际 1)</td><td>⏳ 未修(两条路: 补注解+登记基线(有 <code>data_refresh_v2: 1</code> 先例), 或改成 <code>print</code> 出声从而不计数; 需先读 <code>_classify</code> 判「出声」是否免计, 下轮)</td></tr>
+<tr><td><code>render</code> 快照</td><td><code>ic-efficiency</code> 卡片「执行层归因」<b>主因轮换</b>: 快照钉的是 <code>regime 逆风(超卖…)(主因…)</code>, 实际已是 <code>门控/风控降仓(…)(主因…)</code> —— 文案结构相同, 只是<b>数据驱动的主因排序变了</b>, 非结构漂移(卡片没缺)</td><td>⏳ 未修(需决定: 归一化主因段再刷快照, 还是接受日更; 每日数据变会反复红 ⇒ 治本是把该段纳入 <code>[[N]]</code>/<code>[[PCT]]</code> 同级归一化, 下轮)</td></tr>
+</table>
+
+<p><b>口径提醒</b>: 修复后基线 <b>7 → 5 红</b>(新增 0), 入口 <code>scripts/regression.py --quick</code> 实测见下。</p>
+<p>7 红中 3 类是<b>「文档/基线/快照与现实不同步」</b>而非代码缺陷 —— 这类红随现实单向漂移,</p>
+<p>宜优先机器化(清单「基线清单机器化」项), 否则每次新增脚本都会重新弄红。</p>
+
+<h3>③ before.sha 快照失效破案(清单「42/42 对不上仍未破案」项)—— <b>文件没变, 是快照的 hash 口径错</b></h3>
+
+<p>快照实体: <code>data/tmp/consumer_verify/{models,data,shadow}_{before,after}.sha</code> +</p>
+<p><code>models_pipeline_before.sha</code>(生成于 <b>10-07 13:05 / 13:33</b>;全仓 grep <b>无生成工具源码</b></p>
+<p>⇒ 一次性 shell 命令, 本身就不受版本控制)。</p>
+
+<p><b>证据链(逐条实测)</b>:</p>
+
+<li><code>models_before.sha</code> 42 条记录 vs 当前: <b>一致 0 / 变更 42 / 缺失 0</b>(完整相对路径口径;用</li>
+<p>   basename 口径也是 0/36 —— 后者另有重名覆盖问题, 不是本案病灶)。</p>
+<li><b>git 跟踪且工作区干净的 7 个 models 文件全部对不上</b>(<code>cat_frozen_meta.json</code> /</li>
+<p>   <code>config.json</code> / <code>high_config.json</code> / <code>high_model.pt</code> / <code>high_scaler.pkl</code> / <code>model.pt</code> /</p>
+<p>   <code>scaler.pkl</code>)—— 内容 = HEAD, 不可能变。</p>
+<li><b>mtime 反证</b>: <code>high_model.pt</code> / <code>high_scaler.pkl</code> = <b>Aug 27</b>、<code>cat_frozen_meta.json</code> =</li>
+<p>   <b>Sep 10</b>、<code>backup/low_model_20261006_112957_scaler.pkl</code> = <b>Aug 27</b> —— 均在快照生成前</p>
+<p>   <b>40+ 天</b>定型, 内容不可能变却也对不上。(其中 config/model.pt/scaler.pkl 的不一致是</p>
+<p>   <b>真的</b>: 10-07 14:46 中途重训改的, 晚于 13:05 快照 —— 但这 3 个解释不了其余 39 条。)</p>
+<li><b>口径归谬</b>: <b>0/42</b> 的记录值等于当前<b>任何</b>文件内容的 sha256(全 models 反搜无命中);</li>
+<p>   且 <code>models_before.sha == models_pipeline_before.sha</code> <b>逐字节相同</b>、<code>before == after</code></p>
+<p>   也相同 ⇒ 工具<b>内部自洽</b>(同口径算同一批文件, 期间当然“无变化”), 但与真实 sha <b>脱节</b>。</p>
+
+<p><b>结论</b>: 「42/42 对不上」是<b>假阳性</b> —— models 没有被改, 是这份快照算的根本不是文件内容</p>
+<p>sha256。它因此**既不能证明“没变”(before==after 是自我循环), 也不能证明“变了”(与 shasum</p>
+<p>比对必全红)**, 两头都不能用 ⇒ 停止使用。已排除的候选: hash↔路径错位(记录内 hash 重复可由</p>
+<p>内容真的相同解释, 如 high/low scaler 同特征集)、跨 checkout 生成(0 缺失, 42 个路径全在</p>
+<p>本仓存在)。</p>
+
+<p><b>可靠工具(不新写)</b>: 用现成 <code>role_family_switch</code> 的 <code>write_manifest_sha</code> / 目录</p>
+<p><code>MANIFEST.sha256</code> + 自校验 —— 它有测试锁且带“算完再读回验”的闭环;<b>任何快照工具必须</b></p>
+<p>生成后立刻自验一遍(拿 <code>shasum</code> 抽 1 个文件对拍), 否则错误口径会像本案一样**内部自洽、</p>
+<p>对外全错**, 长期无人发现。</p>
+
+<h3>④ 路径错位全仓普查首步(清单「B 兜底同形态可能不止一处」项)</h3>
+
+<p>复用 B 兜底的形态特征(<code>exists()</code> 检查的路径 与 同文件的写盘目标不同目录)扫 <code>src/*.py</code>:</p>
+
+<li>同文件同时含 <code>data/…config</code> 与 <code>models/</code> 的唯一命中 = <code>retrain.py:804</code> —— 查实是<b>注释</b></li>
+<p>  (10-07 路径修正的历史说明), <b>不是残留代码</b>;</p>
+<li>其余 <code>DATA / "champion_config.json"</code> 类读点(5 处)与实际位置一致(champion_config <b>确在</b></li>
+<p>  <code>data/</code>), 属正常读点而非错位。</p>
+
+<p>⇒ <b>B 兜底同形态当前无第二例</b>。⚠ 这只是关键词级首步, 不等于普查完成: 完整版应机器化为</p>
+<p>「校验型 <code>exists()</code> 的路径 ⟷ 同作用域写盘目标」配对扫描(清单「路径错位全仓普查」仍待办)。</p>
+
+<p><b>机器化版已跑(同日后续)</b>: 按「同名文件被 ≥2 个目录前缀引用」扫全 <code>src/*.py</code> → <b>5 个候选</b>:</p>
+<p><code>config.json</code>(retrain.py 的 <code>data/</code> 引用 = 上面已修的历史注释)、<code>backup</code>(两个不同文件</p>
+<p>各自合理)、<code>cpcv.json</code> / <code>production_fills.csv</code> / <code>regime_state.json</code>(同文件双前缀, 逐个查):</p>
+
+<table>
+<tr><td>候选</td><td>查实结论</td></tr>
+<tr><td><code>cpcv.json</code></td><td><b>有意双写</b>(<code>cpcv.py:431-433</code> 同时写 <code>output/</code> + <code>data/</code>), 消费方 <code>strategy_score.py:55</code> 读 <code>data/</code> ⇒ 配对正确</td></tr>
+<tr><td><code>production_fills.csv</code></td><td><b>有意多路径回退查找</b>(<code>production_risk_monitor.py:248</code> candidates 三处), 输入文件可能落在任一处 ⇒ 非读写错配</td></tr>
+<tr><td><code>regime_state.json</code></td><td><b>有意双写</b>(<code>regime_monitor.py:312-313</code> / <code>:423-424</code> 同写 output+data), 但 docstring <b>:43 写「render_html 读 data/」而代码 <code>render_html.py:1371</code> 实读 <code>output/</code></b> ⇒ 功能无害(双写), 属<b>文档与事实不一致</b> ⇒ 已修 docstring</td></tr>
+</table>
+
+<p>⇒ <b>全仓无真错位</b>(B 兜底形态仅 retrain.py 一处且已修);代价是本项只覆盖「同名跨目录」</p>
+<p>这一种形态, 未覆盖「同名在不同文件间错配」与动态拼接路径 —— 后者需 AST 级分析, 未做。</p>
+
+<h2>2026-10-08 — 清单第 6 批 5 项: GLD/SLV 去重 / 上游 4 标的核查 / retrain_check 双根因修复 / 3b nohup 死因机制确认 / 回归红 <b>5 → 0</b></h2>
+
+<h3>① universe.csv GLD/SLV 重复行清理(数据层, 不入库)</h3>
+
+<p>备份 <code>data/universe.csv.bak_gldslv_20261007_225024</code> 后 <code>drop_duplicates(symbol, keep="first")</code>:</p>
+<p><b>1314 → 1312 行</b>, GLD/SLV 各 1 行(保留先入池行 1034/1098), 全池 dup=0;</p>
+<p><code>universe_types.load_category_map()</code> 1312 项、GLD/SLV=ETF ✓。两个追加方</p>
+<p>(<code>add_etfs.py:430</code> / <code>add_indices.py:135</code>)都已有 <code>existing = set(uni["symbol"])</code> 守卫</p>
+<p>⇒ <b>不会再次追加</b>(无需改代码);<code>market_cap_recompute.py:206</code> 的过期注释已改写为</p>
+<p>「已清理 + 本处去重保留为第二道防线」。</p>
+
+<p><b>连带修一条测试红</b>(<code>test_asset_type_convergence</code>, 全量回归新暴露): 该测试的</p>
+<p><code>old()</code> 模型的是<b>旧代码在重复索引上的 bug</b>(<code>.loc[sym]</code> 返回 Series ⇒ <code>str≠"ETF"</code></p>
+<p>⇒ 误标股票), 去重后前置条件消失 ⇒ diff 合法地 <b>5 → 3</b>(GLD/SLV 新旧模型一致=ETF)。</p>
+<p>改期望值 + docstring 说明;「GLD/SLV 必须标 ETF」的行为锁仍在</p>
+<p><code>test_duplicate_universe_rows_still_resolve_to_etf</code>(去重后仍绿, 其 docstring 预告过此情形)。</p>
+<p>⚠ 教训: <b>钉「与旧实现的差异恰好 N 只」的护栏, 其期望值依赖 bug 的前置条件还在</b> ——</p>
+<p>修掉数据层的 bug 源头本身就会让护栏红, 红≠收敛失效, 要区分。</p>
+
+<h3>② 上游滞后 4 标的(AVB/EQR/WBS/SPLG)—— 核查, 无动作</h3>
+
+<p><code>data/upstream_recovery_log.json</code> 全部 <code>healed: false</code>: AVB 快照 10-06 缓存止 08-24</p>
+<p>(含 2026-08-17 2.793 拆股)、EQR 止 08-17、WBS 止 08-19、SPLG <b>仅 1 行</b>止 07-17;</p>
+<p>与 AGENTS「二级源全查过、0 拼接候选」记录一致 ⇒ <b>上游停更型, 非本项目数据 bug</b>。</p>
+<p><code>upstream_recovery_watch</code> 已挂 <code>--daily</code> 每日记录 ⇒ 维持观察, 本批无代码改动。</p>
+
+<h3>③ retrain_check 基线 bug 修复(<code>src/signal_archive.py::retrain_check</code>)</h3>
+
+<p><b>两半根因(实测)</b>: (a) 样本阈值 <code>RETRAIN_EVAL_NEW=200_000</code> 对上当前日增成熟</p>
+<p>~1,200 行 ⇒ 还差的 8,395 行要 <b>~167 个交易日</b>才够(首轮播种把「历史存量」记成基线,</p>
+<p>此后日增永远够不到阈值); (b) 时间分支只认 <code>retrained_at</code>, 而该键<b>从未被写过</b></p>
+<p>(只有 <code>_do_retrain</code> 成功后才写, 现 state 只有 <code>baseline_at</code> + 上次回滚记录)⇒ <b>死代码</b>。</p>
+
+<p><b>修法(三处)</b>: 新增纯函数 <code>_matured_per_day</code>(⚠ <code>value_counts()</code> 必须先 <code>sort_index()</code></p>
+<p>再 tail, 否则取到行数最多的日期——坑); 时间分支 ref_key 回退</p>
+<p><code>retrained_at → baseline_at → 都没有则 stderr 出声且不触发</code>; 「暂不重训」打印带</p>
+<p><b>ETA</b>(按速率折算还差几个交易日), 触发 reason 区分 <code>time_threshold</code>/<code>sample_threshold</code>。</p>
+<p>测试 <code>tests/ops/test_signal_archive_retrain_state.py</code> 追加 6 条(合成 parquet +</p>
+<p>monkeypatch 状态路径/<code>_do_retrain</code>/阈值)⇒ <b>29 passed</b>。fail-closed 语义不变:</p>
+<p>参照点缺失只出声不乱触发。</p>
+
+<h3>④ 3b nohup 死因 —— 机制确认并写入 runbook 故障表</h3>
+
+<p><b>可复现实验(p6)</b>: <code>nohup … &amp;</code> 在 SYNC shell 调用内 <code>sleep 12</code> 期间进程存活且正常</p>
+<p>tick;<b>调用返回后下一跳即 DEAD</b>, tick 停在调用结束时刻、无 <code>*_done</code> 正常退出标记、</p>
+<p>log 空、macOS <code>log show</code> 无 kill 记录 ⇒ **Freebuff 的 shell 工具在 SYNC 调用返回时</p>
+<p>回收后台子进程组<b>(SIGHUP/进程组清理), <code>nohup</code> 挡不住;</b>不是 torch 崩**</p>
+<p>(3c 同命令前台 <code>PYTHONFAULTHANDLER=1</code> 跑通佐证)。macOS 无 <code>setsid</code>/<code>timeout</code> 可绕。</p>
+<p>⇒ <code>docs/pipeline-runbook.md</code> 故障表首行已改写为确认机制(删「机制未 100% 确认」),</p>
+<p>处置 = <b>一条命令内前台跑完</b> 或 <b>工具 BACKGROUND 托管</b>。</p>
+
+<h3>⑤ 回归红 5 → 0(入口 <code>scripts/regression.py --quick</code>)</h3>
+
+<table>
+<tr><td>原红</td><td>修法</td><td>锁</td></tr>
+<tr><td><code>silent_except</code> ×3</td><td><b>走「出声」路线</b>(非补注解+登记基线): <code>data_fingerprint_scan._find_date_col</code> 的 <code>except: continue</code> 改为 stderr 打印「该列不参与日期类检查」⇒ <code>_is_silent</code> 只认 pass/continue ⇒ 不再计数, <code>SHORT_TRY_BASELINE</code> 保持 0 硬锁(与旧注释「跳过≠通过」教训一致)</td><td><code>tests/ops/test_silent_except_baseline.py</code> 40 passed(测试零改动)</td></tr>
+<tr><td><code>fold6_cut</code></td><td>判 <b>PINNED_BY_DESIGN</b>(参照系需要: disjoint 判据靠固定切点保证 16 块独立, 决策四十一 t 值在此窗口标定;与 <code>PROBE_CUT</code>/<code>IC_REF_MIN</code> 同族)—— 非「过期折6起点」</td><td><code>PINNED_BY_DESIGN</code> 登记 + <code>upper_bound_probe</code> 源码注释 + <code>TestDisjointCutPinned</code> 两锁</td></tr>
+<tr><td><code>render</code> 快照</td><td><b>治本归一化</b>: <code>_normalize_region</code> 新增两掩码 —— (i) 执行层归因<b>主因轮换</b>(摘「(主因, 影响~Xpp/周)」标记后两 factor 字典序重排;只掩排序与影响值, factor 字段名与 <code>等[[N]]路</code> 计数仍锁); (ii) 近8周趋势<b>裸箭头 ↑/↓</b>(旧 <code>(↓)</code> 掩码只覆盖象限徽章的括号箭头)。快照刷新 1 行</td><td><code>test_normalizer_masks_exec_attribution_rotation</code>(对调+翻转归一同骨架 / 字段增删仍红 / 幂等)</td></tr>
+</table>
+
+<p>全量 <code>--quick</code> 实测: <b>1 failed → 修(① 连带的 asset_type_convergence)→ 0 红</b>,</p>
+<p>passed 5762 → <b>5775+</b>、skipped 3。⚠ render 那条若不加掩码, 每次主因随行情轮换</p>
+<p>都会重新弄红(模式廿七)—— 掩码已注明「数据态判据两边要同一天」。</p>
+
+<h2>2026-10-08 — 流水线三竞技场齐备: 模型竞技场(arena_model_family)接入周链 + 研究链</h2>
+
+<p><b>缺口</b>: runbook 定义的三竞技场里, 特征竞技场(<code>arena_roles</code>)与主模型竞技场</p>
+<p>(<code>model_arena</code>)一直在两条自动链里, **模型竞技场(<code>arena_model_family</code>, 模型/标签轴)</p>
+<p>只手动跑*<i> —— 10-06 计划 B 已产出 <code>adopted_</i>_model_candidate</code> 提名, 但裁决本身靠人</p>
+<p>记得跑, 与影子重训接线前同款「设计对了但没接线」。</p>
+<p>(特征轴的 sel 覆盖: 周链走 <code>model_arena --registry</code> 的 <code>arena_candidate_sets.json</code>,</p>
+<p>研究链另有 <code>arena_roles --role sel</code> ⇒ 四角色无缺口, 不动。)</p>
+
+<p><b>改动</b>:</p>
+<li><code>self_evolve.weekly</code> 新增 <b>2c3</b>(紧跟 2c2 特征轴): 角色清单与 2c2 共用单源</li>
+<p>   <code>_arena_role_list</code>(ROLE_GROUPS 去 sel);每个角色过新纯函数门控</p>
+<p>   <code>_model_family_arena_axes(role)</code> 决定跑哪些轴:</p>
+<p>   - <b>model 轴</b>: 从未跑过 / 上轮 <code>status=running</code>(中断残留) / 现役模型 mtime</p>
+<p>     新于上次对决日期(retrain 后现役行变了)→ 跑;否则跳过;</p>
+<p>   - <b>label 轴</b>: 注册表 <code>arena_label_candidates_{role}.json</code> mtime 新于</p>
+<p>     <code>champion_label_{role}_history.json</code>(或从未跑)→ 跑;注册表不存在 = 恒跳</p>
+<p>     (当前就不存在, 队列上线后自动接手);</p>
+<p>   - 没变化 → 跳过: 不白烧训练、不膨胀 <code>champion_*_history</code> 累计 trial 分母;</p>
+<p>     读档损坏 fail-open(按「从未跑过」, 宁白跑不漏对决, 同 <code>_role_arena_needs_run</code>)。</p>
+<p>   失败 log + push 链继续(同 2c2 处置), timeout 7200s/次。</p>
+<li><code>research_worker.stage_arena</code>: 四角色特征竞技场之后追加三角色 <code>--axis model</code>;</li>
+<p>   <code>run_cmd</code> 失败会 raise ⇒ 自己 try 兜住并 log, 否则新阶段一失败会<b>掍断整条研究链</b>。</p>
+<p>   sel 排除与周链同源(sel 模型族归 <code>model_arena</code>);<code>joint</code> 联合复验是复验不是裁决, 不进链。</p>
+<li><b>锁</b>: <code>test_weekly_runs_all_three_arenas</code>(组合: 三竞技场都在周链 + 次序</li>
+<p>   主模型→特征→模型轴; 两个门控打桩成必跑, 组合测试不读生产队列/台账)+</p>
+<p>   门控 4 条合成用例(tmp ROOT + <code>os.utime</code> 控 mtime, 日期全部动态生成, 无时钟炸弹:</p>
+<p>   首跑 / 无变化跳过 / running 与现役更新 / 损坏 fail-open / label 队列三态)+</p>
+<p>   <code>test_stage_arena_includes_model_family_arena</code>(研究链三角色 model 轴 + 次序 + sel 排除)。</p>
+<p>   两文件 <b>69 passed</b>。</p>
+<li>runbook 流程总览表「模型竞技场 → 切换」行与三竞技场角色段补接线状态。</li>
+
+<p><b>验证边界</b>: 只验证<b>编排与门控</b>(测试全绿), 未实跑竞技场本身(每角色数小时训练);</p>
+<p>首次周链运行时留意 2c3 日志 —— 10-07 retrain 使现役模型新于 10-06 台账 ⇒ 三角色</p>
+<p>model 轴首周会真实触发。</p>
+
+<h2>2026-10-08 — 影子列前向追踪器 + 噪声底重测(32 列口径, 含 60d 首测)+ ⓐ 归因通路</h2>
+
+<p><b>三项都是 12-21 换冠前置(用户裁决「全做」)的落地。</b></p>
+
+<li><b>影子列前向追踪器</b> <code>src/cat_shadow_forward.py</code>(新): 每日盘后(signal_archive</li>
+<p>   --eval 之后)读 <code>signal_archive</code>,剔 <code>is_backfilled</code>,逐日 spearman</p>
+<p>   <code>ens_cat_shadow_60</code> vs <code>realized_60</code> 与 <code>composite</code> 对比,输出 mean_delta /</p>
+<p>   pos_delta_share / gate_hint(阈值 0.01)。里程碑 (1,5,10,20,30,45,60) 一次只报最大,</p>
+<p>   rc=3 = 新里程碑(调用方 <code>self_evolve</code> 推手机)。状态 <code>data/cat_shadow_forward_state.json</code></p>
+<p>   幂等,卡 <code>output/cat_shadow_forward.md</code>。锁 <code>tests/research/test_cat_shadow_forward.py</code>(9)。</p>
+
+<li><b>噪声底重测(③)</b> <code>scripts/retrain_noise_floor_2026-09-25.py</code>:</li>
+<p>   - <b>NF 缓存卫兵(新增, 纯函数 <code>cache_meta_stale</code>)</b>: sidecar 缺失/损坏/feat_cols</p>
+<p>     不等(含顺序)/cut 变 ⇒ 清 <code>NF_seed*.parquet</code> 重训 —— 10-06 特征采纳 33→32 后</p>
+<p>     9-25 旧缓存<b>不许静默复用</b>(模式十二)。本轮实测被正确触发, 5 臂全重训。</p>
+<p>   - <b>60d 噪声带 <code>bands_60d</code>(度量层扩展, 免重训)</b>: w60m = te 窗内 <code>fwd_ret_60</code></p>
+<p>     已成熟日的 NF 臂<b>交集</b>(纯函数 <code>common_mature_dates</code>), 成熟前沿随 panel 逐日增长,</p>
+<p>     样本不足 std=None ⇒ 下游判「不可用」不造数。首测 9 个成熟日: σ_ens60=<b>0.01101</b>。</p>
+<p>   - 重测结果(32 列 × 10-08 数据): σ_ens(w29)=<b>0.00598</b>(旧 0.0140 作废)。</p>
+<p>     <code>NOISE_SIGMA_FALLBACK</code>(shadow_retrain)同步改 0.00598 —— 兜底必须等于生产值。</p>
+<li><b>⑤ 复现 Δ 归因(②)</b>: |Δ|=0.0588(vs 10-05 P3 基线)。归因探针</li>
+<p>   (<code>data/tmp/attrib_probe_20261008.py</code>, 同窗 40 天三臂对拍)拆解:</p>
+<p>   <b>数据/池子变化 −0.0744</b>(根因 = <code>a99646a</code> 10-05 13:30 训练层卫生剔 ETF 落地在</p>
+<p>   基线 10:08 冻结之后, 池子 1234→979 只) / <b>特征集 33→32 仅 +0.0051</b></p>
+<p>   ⇒ 属跨口径差, 非代码不确定性。裁决前须换基线重跑(<code>--make-baseline --baseline-note</code>)。</p>
+<li><b>ⓐ dataset_drift_gate 归因通路(修)</b>: <code>champion_term review</code> 新增</li>
+<p>   <code>--drift-attribution</code> 透传 —— 此前 <code>review_decision</code> 有参数但 CLI 无入口, 而 panel</p>
+<p>   每日盘后重写 ⇒ 指纹日变更 ⇒ 12-21 评审 ⓐ 恒红<b>且无法归因</b>(三态判定只剩红)。</p>
+<p>   不传且指纹不一致仍 fail-closed。锁 3 条 CLI 用例(透传/红/指纹一致免归因)。</p>
+
+<p><b>验证</b>: <code>scripts/regression.py --quick</code> <b>RC=0</b>(5810 passed / 3 skipped / 语法门</p>
+<p>452 py + 10 js)。顺带修 3 红: cat_shadow_forward 落盘未判返回值(正是 atomic-json</p>
+<p>守卫抓的模式)+ 2 条 verdict 测试隐式读生产 σ(重测后变红 ⇒ 改为显式钉死 sigma,</p>
+<p>测试约定第 1 条)。</p>
+
+<h3>追加(同日) — 换基线执行 + verdict_note 自相矛盾修复</h3>
+
+<p><b>换基线已执行</b>(上条「裁决前须换基线」兑现):</p>
+<li>`retrain_noise_floor --make-baseline --baseline-note "10-06 特征集采纳 sel</li>
+<p>  −sec_ret_5d(33→32)+ 10-05 训练层卫生剔 ETF 晚于旧基线冻结(池 1234→979),</p>
+<p>  旧 33 列基线跨口径不可复现 ⇒ 换基线"` ⇒ 新基线 32 列 × 10-08 数据</p>
+<p>  (ens_20 IC=0.0678, n=46 天),<code>baseline_meta.rebased=true</code> 带 note 指回旧基线</p>
+<p>  建于 10-05 10:08;旧基线两文件备份 <code>*.bak_33col_20261005</code>。</p>
+<li><b>P4 验收(当日加强版)</b>: 删 <code>NF_seed0</code> 缓存独立重训 vs 新基线 ——</li>
+<p>  65,994 行 × 12 数值列 <b>max|Δ|=0.0(逐位一致)</b>,⑤ 由 |Δ|=0.0588 不可复现</p>
+<p>  翻为 <b>|Δ|=0.0000 可复现</b>。基线是 13:24 建、重训是 13:31,<b>非构造性 0</b>;</p>
+<p>  常规隔日重跑仍是后续 P4 验收(换基线轮 Δ=0 本身系构造性, p4_note 已写明)。</p>
+<li><b>修 <code>verdict_note</code> 自相矛盾</b>: 旧实现只按 <code>ref_kind</code> 选文案不看 <code>ok</code> ⇒</li>
+<p>  |Δ|=0.0588&gt;0.005 判「不可复现」的同一 JSON 里写「能复现 P3 重基线」。</p>
+<p>  抽纯函数 <code>repro_verdict_note(delta, ok, ref_kind)</code>(四象限文案: ok×ref_kind),</p>
+<p>  <code>!ok+p3</code> 文案给归因指引(先查换基线/特征集/数据口径, 口径未变才是代码不确定)。</p>
+<p>  锁 4 例(判红不许说「能复现」/ 正常文案 / 部署产物警告保留 / |Δ| 绝对值),</p>
+<p>  <code>test_retrain_noise_pure.py</code> <b>45 passed</b>。</p>
+
+<h2>决策四十三: <code>IC_HALVE_THRESH</code> 0.03 → <b>−0.10</b>,绝对地板改为「转负才算衰退」(2026-10-09)</h2>
+
+<h3>为什么改</h3>
+
+<p>原阈值 0.03 的隐含判据是「0.03 ≈ 长期均值 0.0862 的三分之一 ⇒ 弱到没信号」。</p>
+<p>它的问题不是数字拍脑袋,而是<b>判据里没有单窗噪声项</b>:</p>
+
+<li><code>realized_60</code> 是 60 日前瞻收益,相邻两日 IC 共享 59/60 的收益窗 ⇒</li>
+<p>  单窗均值的标准误 <code>nw.se_roll = 0.1175</code>,是长期均值 0.0862 的 <b>1.4 倍</b>。</p>
+<li>于是「滚动 IC &lt; 0.03」这个条件在真实历史上是 <b>25.5%</b> 的天数(1183 个滚动窗),</li>
+<p>  最长连续 <b>164 天</b>;正态近似误报率 Φ((0.03−0.0862)/0.1175) = <b>31.6%</b>。</p>
+<p>  即约每 3 个健康窗口就有 1 个把生产暴露砍半。</p>
+<li>而同一时刻的衰减检验 <code>z_nw = −0.58</code>(roll60 vs 长期, HAC lags=59)判</li>
+<p>  <b>与长期无显著差异</b>,块判定 z=−0.63(4/20 块不比它差)也没触发。</p>
+<p>  <b>降仓是开着的,衰减检验说没衰减</b> ⇒ 这条地板在用噪声判衰退。</p>
+
+<h3>改了什么(<code>src/decay_monitor.py</code>,唯一生产改动)</h3>
+
+<li><code>IC_HALVE_THRESH = 0.03</code> → <b><code>-0.10</code></b>(≈ mu − 0.5·SE_window)。</li>
+<li>告警/健康文案改为<b>点名是哪条线触发的</b>:降仓是 <code>or</code> 两条线</li>
+<p>   (绝对地板 / 统计线 <code>low</code> = mu−2σ),文案分别列出,不再只写「低于阈值」。</p>
+
+<p>新值下经验回放:触发率 <b>6.2%</b>、最长连续 <b>73 天</b>(≈1.2 个独立 60 日块);</p>
+<p>正态近似误报率 Φ(−1.58) = <b>5.7%</b>。语义从「信号变弱」改成「<b>信号转负</b>」</p>
+<p>——60 日滚动 IC 为负是明确有害,0.0179 是正数、只是弱。</p>
+
+<h3>明确不改的</h3>
+
+<li><b><code>IC_FLOOR = 0.03</code> 不动</b>(第 113 行)。它是<b>纯告警线</b>,只进 warnings 文本,</li>
+<p>  AST 实测<b>不进任何 <code>exposure_override</code> 分支</b>。它继续报</p>
+<p>  「滚动 IC 跌破阈值 0.03 — 信号已无区分度」是对的:那是「这值得看一眼」,</p>
+<p>  不是风控动作。当前 roll=0.0179 确实在绝对量上偏弱。</p>
+<li><b><code>exposure_override</code> 赋值点仍是恰好 2 处</b>(初值 1.0 / 降仓 0.5)——</li>
+<p>  <code>tests/model/test_short_horizon_ic_caliber.py</code> 与 <code>test_decay_nw_column.py</code></p>
+<p>  两处 AST 结构锁未变仍绿(84 passed)。</p>
+<li>短周期 20/40d 仍只作预警,不跨窗复用 60d 阈值。</li>
+
+<h3>⚠ 已知的、刻意不做的动作:没有重跑 <code>champion.py --update</code></h3>
+
+<p><code>champion.decay_exposure_cap()</code> 读 decay_state 里的<b>单个标量</b>,然后</p>
+<p><code>np.minimum(comp, cap)</code> 作用到<b>全部 1301 天</b>。所以重跑一次会把<b>整段历史</b></p>
+<p>按 cap=1.0 重算,冠军累计从 <b>+261.5% 跳到 +466.9%</b>(1.57×),等于把 50% 封顶</p>
+<p>真正生效的那段时间也一起抹掉 —— 那是回溯性地改历史记录,不是前瞻策略。</p>
+
+<p>⇒ 本次只让<b>前瞻</b>生效: <code>decay_state.json:exposure_override</code> 已写 <b>1.0</b></p>
+<p>(原 0.5),<code>decay_exposure_cap()</code> 现读 1.0。历史净值产物</p>
+<p>(<code>data/champion_equity.csv</code>)未动,仍反映当时的实际暴露。</p>
+<p>若后续要重跑,应先把「按日历史 cap」与「当前 cap」拆开,不要直接用当前标量刷全历史。</p>
+
+<h3>标定样本的诚实边界</h3>
+
+<p>只有 <b>~21 个独立 60 日块</b>(1242 天, 59/60 重叠)。任何阈值在此样本上校准</p>
+<p>都容易过拟合;−0.10 是「误报率降 4 倍 + 语义清晰」的折中,不是最优值。</p>
+<p>若后续 z_nw 或块判定持续报显著衰减,应回头复查本值 —— <b>别指望它单独兜底</b>,</p>
+<p>真正的统计护栏是 <code>low</code> 那条和块判定。</p>
+
+
 </main>
 </body>
 </html>
