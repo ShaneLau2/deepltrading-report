@@ -29,10 +29,51 @@ li { margin:3px 0; }
 </head>
 <body>
 <main>
-<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-10-10 15:51 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
+<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-10-19 10:06 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
 <h1>历史决策记录</h1>
 
 <p>本文件只记录实验结果和已否决方案，不代表当前生产配置。</p>
+
+<h2>2026-10-11 — PIT 基本面特征四步实验：全部未过闸门，不切生产</h2>
+
+<p><b>背景</b>: 2026-10-10 建成 PIT 基本面管线（pe_ttm/ps_ttm/turnover/log_shares/</p>
+<p>ttm_eps/ttm_rev_per_share，按财报公布日 +1 日对齐，已入 dataset.parquet）。</p>
+<p>问题：能否进生产特征集？</p>
+
+<p><b>四臂实验</b>（双窗口竞技场，dry-ledger 未写台账，详见</p>
+<p><code>output/pit_features_experiment_2026-10-11.md</code>）：</p>
+
+<table>
+<tr><th>臂</th><th>结果</th><th>判定</th></tr>
+<tr><td>Step 1: <code>pit</code>（base+7 PIT 原值）</td><td>对 base IC +0.005、MDD -4.8pp；但对现役 ens_cat IC 差 0.023~0.025</td><td>❌ 不过采纳闸门</td></tr>
+<tr><td>Step 2: 相对收益标签（行业中性）</td><td>Sharpe +0.87、MDD -5pp，但 IC 跌破 0.05 达标线；换标签=换生产口径，决策代价大</td><td>❌ 否决</td></tr>
+<tr><td>Step 3: <code>pit_neutral</code>（PIT + 7 个行业内 rank）</td><td>长窗 Sharpe 2.35/近 MDD -14.0% 为 MLP 候选最优，但 IC 0.085/0.107 仍不及 ens_cat 0.110/0.115</td><td>❌ 不过闸门</td></tr>
+<tr><td>Step 4: <code>cat_pit</code>/<code>ens_cat_pit</code>（PIT 喂 CatBoost 分量）</td><td>近期窗有增量（0.121 vs cat 0.110），但长窗腰斩（0.050 vs 0.096）—— regime 依赖/近期过拟合形态</td><td>❌ 不过双窗闸门</td></tr>
+</table>
+
+<p><b>关键教训</b>:</p>
+<li>要行业中性化，*<i>做特征中性化（<code></i>_sec_rank</code>），不做标签中性化** —— 后者</li>
+<p>   换的是整个生产口径（达标线/监控/存档全要换）。</p>
+<li>PIT 特征四条路（原值 MLP / 相对标签 / 中性化 MLP / CatBoost 分量）全部</li>
+<p>   不过闸门；Step 4 的「近期有效长窗崩塌」是典型 regime 依赖形态，</p>
+<p>   对这种证据形态直接关闭，不留在候选池。</p>
+<li>评估对照必须确认现役是谁 —— 本次一度误用 AGENTS.md 里过期的</li>
+<p>   「ens（MLP+LGB）为现役」口径，实际生产已于 2026-10-10 切 ens_cat。</p>
+<li>arena <code>--only</code> 会先于 <code>_need</code> 裁 FEAT_SETS ⇒ 被裁特征集的列不进内存，</li>
+<p>   依赖这些列的实验臂会静默跳过；<code>_need</code> 已改为无条件并入</p>
+<p>   <code>BASE_FUND_PIT_COLS</code>。</p>
+
+<p><b>已落地资产</b>（不废弃，可复用）: dataset.parquet 131 列（+7 PIT +7 sec_rank，</p>
+<p>备份 <code>dataset.parquet.bak_sec_rank</code>）；<code>dataset_io.FEAT_SETS</code> 与 arena 新增</p>
+<p><code>pit</code>/<code>pit_neutral</code> 特征集；arena 新增 <code>--label-set {abs,rel}</code> 开关（训练/IC 标签</p>
+<p>可切，组合 pnl 恒绝对口径）与 <code>cat_pit</code>/<code>ens_cat_pit</code> 实验臂（PIT 列缺失时</p>
+<p>静默跳过）；<code>scripts/backfill_pit_sec_rank.py</code> 免重建回填。</p>
+
+<p><b>顺带修复</b>: <code>models/low_config.json</code> 缺 <code>feature_cols</code> ⇒ p_low_60 全 NaN；</p>
+<p>已补 BASE_FUND_SWING_COLS（33 列）恢复。role_family 消费侧 low 的</p>
+<p><code>inc_cols_mismatch</code>（33 vs 冻结 32 列）为 fail-closed 设计内 fallback，不处理。</p>
+
+<hr>
 
 <li>旧纯 LGB 排名：历史对照；当前生产使用 <code>ens_60</code> rank-average。</li>
 <li>旧 <code>DD8 + VT18</code>：历史口径；当前生产使用 V2 <code>DD×IC</code> 暴露。</li>
@@ -63,7 +104,7 @@ li { margin:3px 0; }
 
 <p><b>修复(三层, 已落地)</b>:</p>
 
-<li><b>① 前置巡查 <code>src/recent_data_audit.py</code>(新增)</b>: 按内容、不看 mtime 的近 N 交易日</li>
+<li><b>① 前置巡查 <code>research_pkg/recent_data_audit.py</code>(新增)</b>: 按内容、不看 mtime 的近 N 交易日</li>
 <p>  巡查(默认 7 = 近一周), 五项判据 —— ①面板↔缓存成交量差 &gt;5%(partial 签名,</p>
 <p>  <b>用成交量不用收盘价</b>: 面板与归一化缓存都是全复权口径, 价格比对会被复权因子污染</p>
 <p>  成假阳性; 而 <code>normalize_cache_df</code> 的 Volume 保真不变); ②面板缺 bar / 横截面覆盖;</p>
@@ -161,13 +202,13 @@ li { margin:3px 0; }
 
 <h2>2026-09-08 — FROZEN 冻结 vs 退化恢复链裁决(违规先例回滚)</h2>
 
-<p><b>背景</b>: 09-08 凌晨直接跑 <code>src/retrain.py</code> 重训生产模型(触发 = 60D IC 低值 14 天),</p>
+<p><b>背景</b>: 09-08 凌晨直接跑 <code>research_pkg/retrain.py</code> 重训生产模型(触发 = 60D IC 低值 14 天),</p>
 <p>未达 FROZEN 例外阈值; 且进程在 <code>torch.save(model.pt)</code> 后被中断, 留下 model.pt 新/scaler</p>
 <p>旧 的半替换态(scaler/config 未落盘)。</p>
 
 <p><b>裁决</b>: 退化恢复链的「重训」动作<b>受 2027-01-01 冻结约束</b>——冻结期内恢复链只允许</p>
 <p>「回滚」(models_prev/ → models/, 不产生新权重); 重训唯一路径 = <b>IC&lt;0 连续 30 交易日</b></p>
-<p>紧急审查例外, 由 <code>src/frozen_forward_tracker.py</code> 自动判定(写</p>
+<p>紧急审查例外, 由 <code>research_pkg/frozen_forward_tracker.py</code> 自动判定(写</p>
 <p><code>data/emergency_review_state.json</code> + rc=3 推送), 审查批准(本文件记录)后才允许 retrain.py。</p>
 
 <p><b>处置</b>: ① 已回滚至冻结 8/26 生产模型(backup/model_20260908_070719_<i> + models_prev/lgb_</i>,</p>
@@ -220,7 +261,7 @@ li { margin:3px 0; }
 
 <p><b>双轮数字差异根因(21:49 日志 vs 02:12 json)</b>: 不是引擎切换, 也不是模型随机性——<b>是代码版本不同</b>。21:49 轮(<code>output/cpcv_cat_run.log</code>)运行于提交 <b>11cfd28</b>(2026-09-09 22:13, CPCV 换裸引擎+cat 分支)之前的<b>中间工作树代码</b>(cat 分支当日开发、当晚才整体提交)。证据链: ① <code>data/dataset.parquet</code> 两轮同一文件(mtime 09-09 17:41, 早于两轮) ② MLP(model.py seed=0)/LGBM(seed=42, worker 含 feature_fraction/bagging)/CatBoost(random_seed=1, thread_count=4) 三个训练组件均<b>实测位级确定</b>(同进程+跨进程) ③ 11cfd28 diff 只改 <code>_backtest</code> 引擎与 cat 分支, 未动 ens 训练路径 ④ 同代码+同数据 ⇒ 块 IC 必逐位相同, 而两轮 12 块 IC 全部不同(如 block0 -0.0089 vs +0.0014) ⇒ 只能是训练路径代码版本差异。<b>21:49 轮的 Sharpe/MDD/Δ 数字作废, 勿引用</b>。</p>
 
-<p><b>裁决影响</b>: CPCV 裸口径下 cat 仅在 <b>IC 层一致占优</b>(ΔIC +0.011, P 81%), <b>Sharpe 层接近持平</b>(P(Δ&gt;0) 53%), 与 Purged WF 的 cat 劣势(bare Δ -0.33)方向相反——cat 优势时期依赖担忧延续, <b>不构成换冠证据</b>。换冠仍 BLOCKED(唯一 fail = ② Purged WF)。<b>可复现性</b>: 提交后代码 + 当前 dataset 重跑 <code>python src/cpcv.py --with-cat</code> 应逐位复现 02:12 数字(组件确定性已实测)。</p>
+<p><b>裁决影响</b>: CPCV 裸口径下 cat 仅在 <b>IC 层一致占优</b>(ΔIC +0.011, P 81%), <b>Sharpe 层接近持平</b>(P(Δ&gt;0) 53%), 与 Purged WF 的 cat 劣势(bare Δ -0.33)方向相反——cat 优势时期依赖担忧延续, <b>不构成换冠证据</b>。换冠仍 BLOCKED(唯一 fail = ② Purged WF)。<b>可复现性</b>: 提交后代码 + 当前 dataset 重跑 <code>python research_pkg/cpcv.py --with-cat</code> 应逐位复现 02:12 数字(组件确定性已实测)。</p>
 
 <h2>2026-09-10 02:50 — CPCV 双轮差异根因修正:数据刷新(非代码版本)+ 重放逐位复现实证</h2>
 
@@ -247,7 +288,7 @@ li { margin:3px 0; }
 
 <p><b>背景</b>: 上一条拆解把「gated(ATR×1.5+DD8)对 cat 系统性拖累」归因为 ① DD8 门控路径依赖=主因 / ② 止损空仓踏空=次因 / ③ 换手=放大器, 其中 ④「持仓重叠度低、cat 独有持仓更激进→更易触发止损」是<b>推断</b>。本条用现成研究面板只读验证(不重训, 10s 级)。</p>
 
-<p><b>数据源</b>: <code>output/model_family_oos.parquet</code>(5 折 expanding walk-forward, 2021-08-02→2026-05-29, 1212 交易日, ens_60/cat_60 同窗)+ panel Close + dataset atr_pct_14。工具 <code>src/cat_gate_holdings_audit.py</code>(新增, 只读), 结果 <code>output/ens_cat_overlap_audit.json</code>。</p>
+<p><b>数据源</b>: <code>output/model_family_oos.parquet</code>(5 折 expanding walk-forward, 2021-08-02→2026-05-29, 1212 交易日, ens_60/cat_60 同窗)+ panel Close + dataset atr_pct_14。工具 <code>research_pkg/cat_gate_holdings_audit.py</code>(新增, 只读), 结果 <code>output/ens_cat_overlap_audit.json</code>。</p>
 
 <p><b>① Top30 Jaccard 重叠度(逐日, 与 monthly_attribution top30 同口径)</b>:</p>
 <li>overall <b>0.3877</b>(逐日均值 0.3974 / 中位 0.3953 / 10p 0.25 / 90p 0.54)</li>
@@ -257,7 +298,7 @@ li { margin:3px 0; }
 
 <p><b>③ 三类持仓 ATR 止损命中率(近似: 信号日 Top30 建仓, entry=次日收盘, stop=entry×(1−1.5×ATR) 锚定, 60 日内收盘破位即命中)</b>:</p>
 <table>
-<tr><th>持仓类别</th><th>仓位数</th><th>命中</th><th>命中率</th></tr>
+<tr><td>持仓类别</td><td>仓位数</td><td>命中</td><td>命中率</td></tr>
 <tr><td>common(共同)</td><td>359</td><td>221</td><td><b>61.6%</b></td></tr>
 <tr><td>ens_only</td><td>271</td><td>158</td><td>58.3%</td></tr>
 <tr><td>cat_only</td><td>271</td><td>158</td><td>58.3%</td></tr>
@@ -292,7 +333,7 @@ li { margin:3px 0; }
 
 <h2>2026-09-10 — gated 拖累审计对账:近似止损检测 vs 引擎逐仓核验(9eecc2c 复核)</h2>
 
-<p><b>背景</b>: 9eecc2c 的近似止损检测(信号日 Top30 建仓, entry=次日收盘, stop=entry×(1−1.5×ATR), 60 日内收盘破位即命中)是独立实现, 未与引擎逐仓对账。本条用 <code>cs.simulate(return_trades=True)</code> 暴露的 trade_log(逐笔 entry/exit/price/reason)逐仓核验。工具 <code>src/cat_gate_audit_reconcile.py</code>(新增, 只读), 结果 <code>output/cat_gate_audit_reconcile.json</code>。</p>
+<p><b>背景</b>: 9eecc2c 的近似止损检测(信号日 Top30 建仓, entry=次日收盘, stop=entry×(1−1.5×ATR), 60 日内收盘破位即命中)是独立实现, 未与引擎逐仓对账。本条用 <code>cs.simulate(return_trades=True)</code> 暴露的 trade_log(逐笔 entry/exit/price/reason)逐仓核验。工具 <code>research_pkg/cat_gate_audit_reconcile.py</code>(新增, 只读), 结果 <code>output/cat_gate_audit_reconcile.json</code>。</p>
 
 <p><b>① 逐仓比对(近似 vs 引擎 atr_stop 交易, 按 entry 重平衡日分组)</b>:</p>
 <table>
@@ -326,7 +367,7 @@ li { margin:3px 0; }
 
 <p><b>动机</b>: 2026-09-09/10 审计链(legacy 风控偏差分离 → CPCV/Purged WF 双轮对账 → 持仓重叠/止损/门控逐仓核验)证明 gated 引擎本身对 cat 存在系统性偏差, 若仍以 gated 作为换冠依据会把机制交互噪音混入模型能力判断。本固化使每条证据链只有一个职责、裁决口径唯一。</p>
 
-<p><b>落地</b>: <code>src/promotion_gates.py</code> docstring + ②③④ 注释、<code>src/purged_walkforward.py</code> docstring、<code>docs/production-conventions.md</code> 新增「模型泛化裁决架构」章节。行为不变: ② 本就是 bare 口径(<code>summary.cat.bare.delta_sharpe</code>), 本决策将其正式化为唯一裁决口径并明确 gated 禁用场景。</p>
+<p><b>落地</b>: <code>research_pkg/promotion_gates.py</code> docstring + ②③④ 注释、<code>research_pkg/purged_walkforward.py</code> docstring、<code>docs/production-conventions.md</code> 新增「模型泛化裁决架构」章节。行为不变: ② 本就是 bare 口径(<code>summary.cat.bare.delta_sharpe</code>), 本决策将其正式化为唯一裁决口径并明确 gated 禁用场景。</p>
 
 <h2>2026-09-10 — cat 研究结论定稿(换冠审计收尾, 与逐仓 reconciliation 合并)</h2>
 
@@ -345,9 +386,9 @@ li { margin:3px 0; }
 
 <p><b>背景</b>: 换冠 BLOCKED(唯一 fail = Purged WF bare), 定稿后剩余路径 = SPA → Frozen OOS → 最终裁决。本次补齐三件设施:</p>
 
-<p><b>① Δ(cat−ens) SPA(src/spa_delta.py, 新)</b>: 候选空间 = 5 信号 × K{10,20,30,40,50} × 窗口{全窗, 2024+, 2025+} = 75 个 Δ(cat−ens) 日收益序列, White 2000 block bootstrap + max-statistic。结果: cat 单候选 t=0.61 (p=0.26), max-statistic p=0.33, cat 在 75 代理候选中排第 26 — <b>Δ(cat−ens) 无显著优势</b>, 与定稿结论一致(CPCV 的 IC 层优势不足以支撑换冠)。诚实标注: 13 变体只有汇总指标无日收益存档, 候选矩阵为 model_family_oos 5 信号的代理构造; 若未来有变体日收益存档可扩到真实 13 变体候选空间。</p>
+<p><b>① Δ(cat−ens) SPA(research_pkg/spa_delta.py, 新)</b>: 候选空间 = 5 信号 × K{10,20,30,40,50} × 窗口{全窗, 2024+, 2025+} = 75 个 Δ(cat−ens) 日收益序列, White 2000 block bootstrap + max-statistic。结果: cat 单候选 t=0.61 (p=0.26), max-statistic p=0.33, cat 在 75 代理候选中排第 26 — <b>Δ(cat−ens) 无显著优势</b>, 与定稿结论一致(CPCV 的 IC 层优势不足以支撑换冠)。诚实标注: 13 变体只有汇总指标无日收益存档, 候选矩阵为 model_family_oos 5 信号的代理构造; 若未来有变体日收益存档可扩到真实 13 变体候选空间。</p>
 
-<p><b>② Frozen OOS 自动裁决器(src/frozen_oos_arbiter.py, 新)</b>: 冻结点(2026-09-04)后真实新数据, 标签全熟(≈2026-12 中旬)后自动输出 cat vs ens 对比与判色建议(双指标: IC + 裸 Sharpe)。已挂入周链(4a2a1b, frozen_forward_tracker 之后), 失败只告警不阻断。当前如实降级: archive 无 cat_60 列 → waiting_cat_data(未来信号管线接入 cat 盲测窗预测即自动生效), 标签成熟 0/3。判色仅为建议, 换冠仍需 promotion_gates 全链 + 人工批准。</p>
+<p><b>② Frozen OOS 自动裁决器(research_pkg/frozen_oos_arbiter.py, 新)</b>: 冻结点(2026-09-04)后真实新数据, 标签全熟(≈2026-12 中旬)后自动输出 cat vs ens 对比与判色建议(双指标: IC + 裸 Sharpe)。已挂入周链(4a2a1b, frozen_forward_tracker 之后), 失败只告警不阻断。当前如实降级: archive 无 cat_60 列 → waiting_cat_data(未来信号管线接入 cat 盲测窗预测即自动生效), 标签成熟 0/3。判色仅为建议, 换冠仍需 promotion_gates 全链 + 人工批准。</p>
 
 <p><b>③ gated 引用面审计</b>: 盘点全仓库展示/引用 gated(ATR×1.5+DD8)数字的活跃位置 — model_arena(已标 rc_state 历史诊断)、champion_report(已标弃用)、purged_walkforward(已标口径角色)、promotion_gates(② bare 裁决)均合规; 唯一未标注的活跃引用是 <b>production_validation.py 的旧 CPCV 行</b>, 已加注「旧 mlp-only 协议 k=50/ATR1.5 gated 口径, 不继承给 cat 候选; 当前 CPCV 见 output/cpcv.json engine=bare」。引用规范写入 production-conventions.md(gated 数字不得用于换冠论证)。web 的 atr_mult 为交互参数(用户主动选)不计入; output 历史快照不追溯改写。</p>
 
@@ -413,7 +454,7 @@ li { margin:3px 0; }
 <p>「倒计时没归零」被误判为故障。<b>不为了让页面好看而改判色门槛</b>(30 天门槛与</p>
 <p><code>promotion_gates.BLIND_MIN_MATURE_DAYS</code> 一致, 不动)。</p>
 
-<p><b>② 自进化页盲测窗进度卡</b>(<code>src/blind_window_progress.py</code> 单一事实源 + <code>web/evolve_manager</code> 接线</p>
+<p><b>② 自进化页盲测窗进度卡</b>(<code>research_pkg/blind_window_progress.py</code> 单一事实源 + <code>web/evolve_manager</code> 接线</p>
 <p>+ <code>web/static/pages/research.js</code> 渲染, overview 缓存 120s): 双轨成熟度进度条(分母 = 判色门槛</p>
 <p>30 天, 因为要回答「离判色还有多远」; 预测日数与各轨自身 ETA 放副行)+ 判色倒计时(交易日/自然日)</p>
 <p>+ 判色后结果高亮(建议升级 = 绿 / 维持 = 蓝)与双轨对比表。ENS = 判色门槛轨(裁决器只 gate 它),</p>
@@ -428,7 +469,7 @@ li { margin:3px 0; }
 <p>promotion_gates 全链 + 人工批准)。幂等: <b>首次判色 + 结论变更(升级↔维持)</b> 才推</p>
 <p>(<code>data/blind_window_push_state.json</code>); 推送失败<b>不记状态</b> → 下次周链重试。</p>
 
-<p><b>④ decision-log 手机可打开链接</b>(<code>src/deploy_decision_log.py</code>): 主仓库无 GitHub 远端,</p>
+<p><b>④ decision-log 手机可打开链接</b>(<code>production_pkg/deploy_decision_log.py</code>): 主仓库无 GitHub 远端,</p>
 <p><code>docs/decision-log.md</code> 手机上点不开 → 渲染成自包含 HTML 发布到 report 站点</p>
 <p><code>https://shanelau2.github.io/deepltrading-report/decision-log.html</code>(用户/仓库名从 site 仓库</p>
 <p>git remote 反推, token 不入链接, 不另设常量漂移)。周链 4a2a1a <b>先于</b>判色步骤发布,</p>
@@ -470,7 +511,7 @@ li { margin:3px 0; }
 
 <p><b>② 存量缓存修复(已落盘, 带备份)</b></p>
 
-<p>新增 <code>src/cache_scale_repair.py</code>(默认 dry-run)。口径实测: 面板 Close 与缓存列关系<b>不统一</b></p>
+<p>新增 <code>research_pkg/cache_scale_repair.py</code>(默认 dry-run)。口径实测: 面板 Close 与缓存列关系<b>不统一</b></p>
 <p>—— 分红股(如 VZ/T)面板 == 缓存 <b>AdjClose</b>, MNST 型面板 == 缓存 <b>Close</b>;故判定必须取</p>
 <p><b>best-of-Close/AdjClose</b>, 否则把所有分红股误判为损坏。判据用<b>坏行占比</b>(≥1% 且 ≥20 行)</p>
 <p>而非只看中位比值 —— 分段损坏(如 ERX 36% 行坏、GBTC 14.5%)中位仍 ≈1, 而现存的</p>
@@ -484,12 +525,12 @@ li { margin:3px 0; }
 <p><b>③ FROZEN 闸门下沉 + 全面 fail-closed(阻塞, 已修)</b></p>
 
 <p>规则(2026-09-08 裁决)原先只实现在控制台一键研究链 <code>web/research_worker._frozen_gate</code>;</p>
-<p>而 cron 链的 <code>signal_archive._run_recovery → _do_retrain</code>、<code>src/retrain.py</code>(控制台「重训 /</p>
-<p>强制重训」按钮直调)、<code>src/train_final.py</code>(生产 MLP 真正落盘处)<b>全程没有任何冻结判定</b></p>
+<p>而 cron 链的 <code>signal_archive._run_recovery → _do_retrain</code>、<code>research_pkg/retrain.py</code>(控制台「重训 /</p>
+<p>强制重训」按钮直调)、<code>research_pkg/train_final.py</code>(生产 MLP 真正落盘处)<b>全程没有任何冻结判定</b></p>
 <p>—— 09-08 那次违规重训走的正是这条路径。更糟的是 <code>_run_recovery</code> 是 <b>fail-open</b>: 回滚</p>
 <p>失败反而升级为「重训」, 即安全网失效时执行被禁止的动作。</p>
 
-<p>修复: 新增 <code>src/frozen_guard.py</code>(单一事实源, fail-closed: 读不到/损坏/非 approved/</p>
+<p>修复: 新增 <code>governance_pkg/frozen_guard.py</code>(单一事实源, fail-closed: 读不到/损坏/非 approved/</p>
 <p>佐证 streak&lt;30 一律拒绝), 接入 4 处写入路径 —— <code>retrain.save_model</code>、</p>
 <p><code>signal_archive._do_retrain</code>、<code>train_final.main</code>(仅拦生产 models/, 实验目录不受限),</p>
 <p>并把 <code>_run_recovery</code> 改为: 回滚失败 + 冻结期 → 停在此处交人工(不再重训);解冻后保留</p>
@@ -511,7 +552,7 @@ li { margin:3px 0; }
 
 <h2>2026-09-10 — 审查后修复第二批: 执行层 fail-closed / 控制台两高危 / 验证设施 fail-open</h2>
 
-<p><b>④ 执行层暴露读取 fail-closed(<code>src/exposure_source.py</code> 新增)</b>: trade_plan 的 <code>pos_size</code></p>
+<p><b>④ 执行层暴露读取 fail-closed(<code>research_pkg/exposure_source.py</code> 新增)</b>: trade_plan 的 <code>pos_size</code></p>
 <p>原在 <code>v2_exposure_history.json</code> 缺失/损坏时静默回退 <b>1.0 满仓</b>(单标 3.33%), 把当日目标暴露</p>
 <p>(0.15~0.45)放大 2~6 倍且无告警; <code>v2_prod_exposure.annotate_trade_plan</code> 同款 <code>rec.get(..., 1.0)</code>。</p>
 <p>现收成单一事实源: history → 当日快照(<b>限龄 3 天</b>)→ <code>available=False</code>;不可用时</p>
@@ -894,7 +935,7 @@ li { margin:3px 0; }
 <p>     不允许「全是冻结 OOS 面板上的比较」;</p>
 <p>  3. 在<b>连续 2 次</b>月度复核中都成立。</p>
 
-<p>实现: <code>src/frozen_review.py</code>(只读)读 <code>output/model_arena.csv</code> +</p>
+<p>实现: <code>research_pkg/frozen_review.py</code>(只读)读 <code>output/model_arena.csv</code> +</p>
 <p><code>data/decay_state.json</code>, 输出证据条数 / 实时口径条数 / 连续成立次数,</p>
 <p>写 <code>output/frozen_review.md</code> + <code>frozen_review_state.json</code>。</p>
 <p>当前实测: <b>2 条证据(其中实时 1 条) ⇒ 未触发 ⇒ 维持冻结</b>。</p>
@@ -1009,9 +1050,9 @@ li { margin:3px 0; }
 <p><b>现状核实</b>: 仓库里<b>没有任何</b>登记表 —— <code>grep -rn "experiment_id|registry" src/*.py</code></p>
 <p>零命中。最接近的是 <code>data/champion_history.json</code>(22 条冠军更替日志), 但它只记冠军</p>
 <p>竞技场的结果, 不记「为什么」「用什么数据」「和谁重复」, 也不拦任何事。</p>
-<p>(注: <code>src/experiment.py</code> 是 2019 年的小模型可行性测试脚本, 不是登记表。)</p>
+<p>(注: <code>research_pkg/experiment.py</code> 是 2019 年的小模型可行性测试脚本, 不是登记表。)</p>
 
-<p><b>落地</b>: <code>src/experiment_registry.py</code> → <code>data/experiment_registry.json</code>(原子写)</p>
+<p><b>落地</b>: <code>research_pkg/experiment_registry.py</code> → <code>data/experiment_registry.json</code>(原子写)</p>
 <p>+ <code>output/experiment_registry.md</code>; 43 例测试, <b>13 个变异全部变红</b>。</p>
 
 <p>设计:</p>
@@ -1075,8 +1116,8 @@ li { margin:3px 0; }
 
 <h3>落点</h3>
 
-<li><code>src/champion_term.py</code>(<b>新</b>): 判据 + 状态机 + CLI。台账 <code>data/champion_term_state.json</code>。</li>
-<li><code>src/frozen_guard.py</code>: <code>FROZEN_UNTIL</code> <b>删除</b>;两条通路 —— 紧急例外(IC&lt;0 连续 30</li>
+<li><code>production_pkg/champion_term.py</code>(<b>新</b>): 判据 + 状态机 + CLI。台账 <code>data/champion_term_state.json</code>。</li>
+<li><code>governance_pkg/frozen_guard.py</code>: <code>FROZEN_UNTIL</code> <b>删除</b>;两条通路 —— 紧急例外(IC&lt;0 连续 30</li>
 <p>  交易日 + 人工批准 + tracker streak ≥30 佐证, <b>可随时打破任期</b>)或 任期到期</p>
 <p>  (届满 + <code>verdict=switch</code> + <code>approval=approved</code>)。fail-closed: 台账读不出/不存在 ⇒ 拒绝。</p>
 <li><code>web/research_worker._frozen_gate()</code>: 原先是闸门规则的<b>第二份实现</b>(自己读</li>
@@ -1105,10 +1146,10 @@ li { margin:3px 0; }
 <h3>操作</h3>
 
 <pre><code>
-.venv/bin/python src/champion_term.py status              # 任期进度 + 闸门状态
-.venv/bin/python src/champion_term.py review --challenger cat --overlap 0.336
-.venv/bin/python src/champion_term.py approve | reject    # 人工(仅对 switch 有意义)
-.venv/bin/python src/champion_term.py renew [--champion X]
+.venv/bin/python production_pkg/champion_term.py status              # 任期进度 + 闸门状态
+.venv/bin/python production_pkg/champion_term.py review --challenger cat --overlap 0.336
+.venv/bin/python production_pkg/champion_term.py approve | reject    # 人工(仅对 switch 有意义)
+.venv/bin/python production_pkg/champion_term.py renew [--champion X]
 </code></pre>
 
 <h3>测试</h3>
@@ -1281,7 +1322,7 @@ li { margin:3px 0; }
 
 <p><b>⚠ 附带发现(比上面更要紧)</b>: 逃顶真正需要的是「到顶还剩几天」(<code>fwd_days_to_high</code>),</p>
 <p>该量<b>已进生产信号输出</b>(2026-09-18 信号文件中位 11.3 天, 100% 非空),</p>
-<p>但 <code>src/time_oos.py</code> 的出口 <code>data/oos_time.parquet</code> <b>不存在</b> ⇒ 这个脚本<b>从未跑过</b>,</p>
+<p>但 <code>research_pkg/time_oos.py</code> 的出口 <code>data/oos_time.parquet</code> <b>不存在</b> ⇒ 这个脚本<b>从未跑过</b>,</p>
 <p>时点模型<b>没有任何样本外验证</b>。<code>signals.py</code> 里那句「IC reference ~0.1-0.2」只是注释, 不是实测。</p>
 
 <p><b>下一步(按性价比)</b>: ① 先跑 <code>time_oos.py</code>(成本 0)把时点 IC 量出来 —— 若 &lt; 0.05,</p>
@@ -1321,7 +1362,7 @@ li { margin:3px 0; }
 <p>⇒ <b>教训: 存在性一律用 <code>Path.exists()</code> 直接判, 不要用 <code>ls | grep | head</code>。</b></p>
 <p>(同款错误今天第二次: 早上把 0.336 vs 0.586 归因于 k, 也是没放到同一份输入上比。)</p>
 
-<p><b>已重跑 <code>src/time_oos.py</code>(5 折, 2021-08→2026-06, 1,434,201 行), val-IC 0.347–0.358。</b></p>
+<p><b>已重跑 <code>research_pkg/time_oos.py</code>(5 折, 2021-08→2026-06, 1,434,201 行), val-IC 0.347–0.358。</b></p>
 
 <p><b>实测(→ <code>output/time_oos_ic.md</code>)</b>:</p>
 
@@ -1422,7 +1463,7 @@ li { margin:3px 0; }
 
 <p><code>scripts/pit_bias_sharpe.py</code>(测量) / <code>scripts/pit_universe_fix.py</code>(修正), 只读不重训。</p>
 
-<p><b>发现一(数据缺陷)</b>: <code>src/pit_universe.py</code> 算 <code>市值 = shares(t) × Close(t)</code>, 但</p>
+<p><b>发现一(数据缺陷)</b>: <code>research_pkg/pit_universe.py</code> 算 <code>市值 = shares(t) × Close(t)</code>, 但</p>
 <p><code>Close</code> 是<b>后复权价</b>、<code>shares</code> 是<b>当时实际股数</b> ⇒ 市值被系统性低估一个累计拆股</p>
 <p>因子。实测: NVDA 2016 $0.90B(真实 ~$35B, ÷40)、AAPL 2016 $138B(真实 ~$600B, ÷4)、</p>
 <p>TSLA 2019 $3.07B(真实 ~$45B, ÷15)、AMZN/GOOGL 2021 $84B(真实 ~$1.7T, ÷20);</p>
@@ -1449,7 +1490,7 @@ li { margin:3px 0; }
 <p>针对决策七保留意见 ①(−0.84 是上界, 因 21.4% 行属缺数据而非真不够格), 已查清:</p>
 
 <p><b>① 262 只「无市值」标的里 199 只</b>根本不是股票**(ETF 168 / INDEX 28 / 商品 2 /</p>
-<p>加密 1), 真股票只有 63 只。<code>src/pit_universe.py</code> 对所有标的套「市值 ≥ $10B」这条</p>
+<p>加密 1), 真股票只有 63 只。<code>research_pkg/pit_universe.py</code> 对所有标的套「市值 ≥ $10B」这条</p>
 <p><b>股票</b>判据 ⇒ 非股票恒 NaN ⇒ <code>NaN &gt;= x</code> 为 False ⇒ <b>整类被静默剔除</b>。</p>
 <p>这不是缺数据, 是<b>口径错配</b>, 混进 Δ 里让一个数字代表两个效应。</p>
 
@@ -1484,7 +1525,7 @@ li { margin:3px 0; }
 <p><b>等价变异</b>才暴露。</p>
 
 <p><b>裁决(更新决策七)</b>: ① 启用 PIT 前须修<b>两处</b> —— 拆股因子(已修,</p>
-<p><code>scripts/pit_universe_fix.py</code>) <b>和</b> 口径错配(<code>src/pit_universe.py</code> 不能对</p>
+<p><code>scripts/pit_universe_fix.py</code>) <b>和</b> 口径错配(<code>research_pkg/pit_universe.py</code> 不能对</p>
 <p>ETF/指数/商品/加密套市值门槛, 应走各自准入口径, <b>尚未修</b>)。</p>
 <p>② 保留意见①撤销; 保留意见②(未重训)与③(任期闸门)<b>仍然有效</b>。</p>
 <p>③ 不必为「量化偏差」而补 shares 覆盖 —— 区间已夹住, 补了只会让它更窄。</p>
@@ -1494,7 +1535,7 @@ li { margin:3px 0; }
 
 <p>修了决策八遗留的第二处缺陷。</p>
 
-<p><b>① <code>src/pit_universe.py</code> 改为先分类再判</b>, 并新增 <code>category</code> / <code>elig_reason</code> 两列:</p>
+<p><b>① <code>research_pkg/pit_universe.py</code> 改为先分类再判</b>, 并新增 <code>category</code> / <code>elig_reason</code> 两列:</p>
 
 <table>
 <tr><td>类别</td><td>判据</td><td>in_universe</td><td>elig_reason</td></tr>
@@ -1509,7 +1550,7 @@ li { margin:3px 0; }
 <p>⚠ 核心判据: 指数与「缺股数的股票」虽然同为 False, <b><code>elig_reason</code> 必须不同</b> ——</p>
 <p>相同就退回修复前的复合状态(模式六十三)。</p>
 
-<p><b>② 新增 <code>src/universe_types.py</code>(类别唯一事实源)</b>。此前同一件事有 <b>4 份实现</b>,</p>
+<p><b>② 新增 <code>data_pkg/universe_types.py</code>(类别唯一事实源)</b>。此前同一件事有 <b>4 份实现</b>,</p>
 <p>其中 3 份(<code>signal_coverage_audit.classify</code> / <code>signals._asset_type</code> /</p>
 <p><code>champion_stop</code> 内联)<b>不认 COMMODITY 与 CRYPTO</b>(模式七十)。</p>
 <p>本轮只把 <code>pit_universe</code> 与 <code>pit_bias_sharpe</code> 收敛过去; **signals / champion_stop</p>
@@ -1540,7 +1581,7 @@ li { margin:3px 0; }
 <p>修了决策七的第一处缺陷(此前只有一次性修补脚本 <code>scripts/pit_universe_fix.py</code> 会补,</p>
 <p>builder 直出仍是错的 ⇒ 谁重建谁踩坑)。</p>
 
-<p><b>① 算法收敛到 <code>src/split_adjust.py</code>(唯一事实源)</b>, builder 默认</p>
+<p><b>① 算法收敛到 <code>data_pkg/split_adjust.py</code>(唯一事实源)</b>, builder 默认</p>
 <p><code>--split-adjust on</code> 直出正确市值; 修补脚本改为 import 同一模块, 不再各写一份。</p>
 <p><code>--split-adjust off</code> 保留为复现缺陷的对照开关(打印 stderr 告警)。</p>
 
@@ -1567,7 +1608,7 @@ li { margin:3px 0; }
 
 <h3>十一、<code>PIT_UNIVERSE=1</code> 此前在<b>生产日链上完全不生效</b>(2026-09-21)</h3>
 
-<p>读 <code>src/features.py</code> 的调用图时发现的「永不生效」缺陷(模式七十: 同一件事两份实现,</p>
+<p>读 <code>features_pkg/features.py</code> 的调用图时发现的「永不生效」缺陷(模式七十: 同一件事两份实现,</p>
 <p>抄全的只有一份):</p>
 
 <table>
@@ -1678,7 +1719,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <p><b>裁决</b>: 两处都修(2026-09-22 用户选「两处都修」)。</p>
 
-<p><b>改动</b>(<code>src/feature_rolling_review.py</code>):</p>
+<p><b>改动</b>(<code>features_pkg/feature_rolling_review.py</code>):</p>
 
 <li><code>verdict()</code> 新增 <code>shuffled</code> / <code>decay_reject</code> 两个参数:</li>
 <p>  * 单调衰减且衰减 ≥ <code>decay_reject</code>(默认 0.5) ⇒ <b>拒绝</b>。门槛是 CLI 可调</p>
@@ -1720,7 +1761,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <p><b>背景</b>: 决策序列里「期望权重」(2026-08-20)否决时留了一句「要差异化权重只能靠</p>
 <p>波动率倒数等结构信号,不靠历史交易期望」—— 四个加权方向里唯一没试过的。本轮补测</p>
-<p>(<code>src/vol_inverse_weight.py</code>), 就此收口。</p>
+<p>(<code>research_pkg/vol_inverse_weight.py</code>), 就此收口。</p>
 
 <p><b>实验</b>: 选股不变(ens_60 Top30 / 60D / 无个股止损 / 不补位), 只改权重</p>
 <p>∝ 1/vol_20(5 日平滑、每日横截面归一、单票上限 8%,只用过去数据);对照 = 等权</p>
@@ -1753,7 +1794,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <p>但没落到代码; 而 §6.2 的闸门判据 = <code>gate_decision</code>(到期 + verdict=<b>switch</b> + approved)。</p>
 <p>两件事本轮做完/发现:</p>
 
-<p><b>① 拆分落地(零行为变化, 闸门关闭期)</b> —— <code>src/features.py</code>:</p>
+<p><b>① 拆分落地(零行为变化, 闸门关闭期)</b> —— <code>features_pkg/features.py</code>:</p>
 <li>实现仍<b>只有</b> <code>_apply_pit_filter</code> 一份, 启用策略按 scope 分:</li>
 <p>  <code>scope="train"</code>(读 <code>PIT_UNIVERSE</code>) 由 <code>build_dataset</code> 用;</p>
 <p>  <code>scope="realtime"</code>(读 <code>PIT_REALTIME</code>, <b>默认关</b>) 由 <code>compute_features_incremental</code> 用。</p>
@@ -1781,7 +1822,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <p>但那是<b>截面多空净值</b>(周度、等权多+空、无 DD/无风险层), 从没推进到组合层 —— 生产冠军是</p>
 <p>纯多头 Top30 等权, 这些 alpha 能否改善真实组合是另一个问题。</p>
 
-<p><b>实验</b>: <code>src/ls_sector_overlay.py</code> 五臂, 统一生产口径(裸 k30 × <code>champion._v2_equity</code> V2 风险层 ×</p>
+<p><b>实验</b>: <code>research_pkg/ls_sector_overlay.py</code> 五臂, 统一生产口径(裸 k30 × <code>champion._v2_equity</code> V2 风险层 ×</p>
 <p><code>realign_to_realized</code>, 融券卖空单边 0.15% + 融券费 0.5%/年, 60D 换仓按实际重叠双边计):</p>
 <p>A0 基线 / A1·A2 空头腿 h=0.5、1.0 / A3 行业内去均值选股 / A4 组合臂。</p>
 
@@ -1910,7 +1951,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <h3>⑤ ⚠ 翻案: ③ 的基线认错了, 重训方向成立(2026-09-25 同日落定)</h3>
 
 <p><b>根因</b>: ③ 里的 "F0_frozen" 取自 <code>data/oos_earnings.parquet</code> 的 <code>ens_20</code> 列。</p>
-<p>该面板 2026-06-01 之后的行来自 fold6(<code>src/oos_fold_extend.py</code> 单折, test_start=2026-06-01),</p>
+<p>该面板 2026-06-01 之后的行来自 fold6(<code>research_pkg/oos_fold_extend.py</code> 单折, test_start=2026-06-01),</p>
 <p>其协议是 <code>train = Date &lt; test_start − 365d</code> ⇒ <b>fold6 的训练上界是 2025-06-01</b>。</p>
 <p>而 <code>models/model.pt</code> 的训练上界是 <b>2026-05-28</b>(config.json n_train=2,655,679)。</p>
 <p>⇒ 面板基线比真正部署的模型<b>旧约 12.5 个月</b>, ③ 用它当「现役」会系统性高估新模型改进。</p>
@@ -1922,7 +1963,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <p>但红灯刺眼 —— LGB <code>best_iter=3000</code> 跑满、早停从未触发, val-IC 0.58~0.64(生产量级 0.1~0.3)。</p>
 <p><b>怀疑是随机切分泄漏时间信息导致的过拟合运气。</b></p>
 
-<p><b>F6</b>(逐行复刻 <code>src/train_final.py</code> 生产协议, 只把前沿推到 06-30):</p>
+<p><b>F6</b>(逐行复刻 <code>research_pkg/train_final.py</code> 生产协议, 只把前沿推到 06-30):</p>
 <p>MLP = <code>train_fixed</code> 全部 2,727,908 行、无 holdout、无早停、40 epochs;</p>
 <p>LGB = <code>tr &lt; (max−365d)</code> 2,421,727 行 + 尾部 365d 时间早停。</p>
 <p>结果 IC20 = <b>0.1463</b>(n=40, t=12.1), NAV +16.39% / MDD -5.55%。</p>
@@ -2006,7 +2047,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <p>数据: <code>output/retrain_validate_f5_2026-09-25.md</code> / <code>..._f6_2026-09-25.md</code> /</p>
 <p><code>..._f7_2026-09-25.md</code> / <code>data/tmp/f6_parity.log</code>;</p>
 <p>训练产物 <code>data/tmp/retrain_validate/{F5_full0630,F6_prod0630,F7_deployed}.parquet</code>;</p>
-<p>新增 <code>src/lgbm_predict_worker.py</code>(部署 LGB 子进程预测; torch + 多线程 LightGBM</p>
+<p>新增 <code>research_pkg/lgbm_predict_worker.py</code>(部署 LGB 子进程预测; torch + 多线程 LightGBM</p>
 <p>同进程在 macOS 上 segfault, 已实证)。</p>
 
 <h3>⑥ 分周期分阶段切换可行性(用户提议: 20d 达标先切, 60d 等标签)</h3>
@@ -2026,7 +2067,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <p><b>⚠ 但有两个结构性障碍, 使「只切 20d」不能按字面实现:</b></p>
 
-<li><b>MLP 无法按周期拆分</b>(<code>src/model.py:32-46</code>): <code>MultiMLP</code> 是</li>
+<li><b>MLP 无法按周期拆分</b>(<code>research_pkg/model.py:32-46</code>): <code>MultiMLP</code> 是</li>
 <p>   <code>shared trunk + 单个 nn.Linear(prev, n_out)</code> 一次输出 20/40/60 三个头。</p>
 <p>   trunk 权重为三个头<b>联合优化</b> ⇒ 不存在「新 20d 头 + 旧 60d 头」这种产物。</p>
 <p>   能按周期独立切换的只有 <code>lgb_20/40/60.txt</code>(三个独立文件), 但</p>
@@ -2215,7 +2256,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <h3>⑥ 待执行项登记进任期台账(新能力)</h3>
 
-<p><code>src/champion_term.py</code> 新增 <code>next_actions</code> 字段 + <code>actions</code> 子命令</p>
+<p><code>production_pkg/champion_term.py</code> 新增 <code>next_actions</code> 字段 + <code>actions</code> 子命令</p>
 <p>(<code>--file</code> 登记 / <code>--done</code> 勾销 / <code>--clear</code> 清空 / 默认查看)。</p>
 <p>已登记 5 项(截止日 2026-10-26 / 2026-12-21 ×3 / 2027-03-19),</p>
 <p><code>status</code> 与 <code>renew</code> 都会保留它。修复了写后展示读旧值的 bug。</p>
@@ -2233,7 +2274,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <li>增量测试单一种子(seed=42)、单一测试窗切法。双臂同批行只保证<b>特征集</b>对比公平,</li>
 <p>   不消除窗口偶然性; 21 天的 60d 窗 t 值不可信(日间 IC 自相关严重)</p>
 <li>研究侧候选实现(<code>new_features_screen.build_candidates</code>)<b>未接入生产特征链</b></li>
-<p>   <code>src/features.py</code>。若未来要真正纳入, 需先加因果实现并过坏值/拆股/坏 bar 护栏</p>
+<p>   <code>features_pkg/features.py</code>。若未来要真正纳入, 需先加因果实现并过坏值/拆股/坏 bar 护栏</p>
 
 <hr>
 
@@ -2352,9 +2393,9 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <p>   Canary 均不接入」, 附 09-10 否证与 09-25 复测出处。</p>
 <li><code>.gitignore</code> 加入 <code>.reasonix/</code> 与 <code>reasonix.toml</code>(本地 agent 工具配置, 含本机路径)。</li>
 <li>删除误命名文件 <code>arnings.filterwarnings("ignore", message=".<i>spearmanr.</i>")</code> ——</li>
-<p>   611 行, 是 <code>src/lse_options_history.py</code>(612 行)的<b>副本</b>, diff 只差 1 行</p>
+<p>   611 行, 是 <code>research_pkg/lse_options_history.py</code>(612 行)的<b>副本</b>, diff 只差 1 行</p>
 <p>   (<code>warnings.filterwarnings(... ConstantInput ...)</code>), 两者 mtime 同为 <code>Sep 25 12:27:06</code></p>
-<p>   ⇒ 某条 shell 命令引号被打断, 参数被当成输出文件名。真实脚本在 <code>src/lse_options_history.py</code>。</p>
+<p>   ⇒ 某条 shell 命令引号被打断, 参数被当成输出文件名。真实脚本在 <code>research_pkg/lse_options_history.py</code>。</p>
 
 <h3>不做的</h3>
 
@@ -2523,7 +2564,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <p>(决策二十三), 但 F6(切点 06-30)只有 <b>29 天</b>前向窗; ② 12-21 到期时若<b>临时</b>用</p>
 <p>最新数据重训, 前向窗 = 0 天, 正是「重训了没法验证」; ③ 直接切 = 违反任期闸门。</p>
 
-<h3>裁决: 制度化影子重训(src/shadow_retrain.py)</h3>
+<h3>裁决: 制度化影子重训(research_pkg/shadow_retrain.py)</h3>
 
 <p><b>现在</b>就重训一个 shadow(切点在过去, 默认=最新 60d 成熟日 2026-06-30), 它的验证窗</p>
 <p>是<b>真实未来</b> [切点+1, 今天], 且每天自动增长 —— 到 12-21 时是 ~115 天前向证据 +</p>
@@ -2559,7 +2600,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <h3>产出</h3>
 
-<li><code>src/shadow_retrain.py</code>(用法: 无参=最新成熟切点重训+评估; <code>--evidence</code> 看轨迹;</li>
+<li><code>research_pkg/shadow_retrain.py</code>(用法: 无参=最新成熟切点重训+评估; <code>--evidence</code> 看轨迹;</li>
 <p>  <code>--dry-run</code> 不写盘; 复用已存权重时若 LGB 增强模型齐全则仍算全 ens, 否则降级</p>
 <p>  MLP 单腿并在证据行标 <code>mlp_only</code>)</p>
 <li><code>data/champion_shadow_evidence.jsonl</code> 首条证据(append-only)</li>
@@ -2580,7 +2621,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <h3>P1: 缓存写入端收敛成唯一的 append-only 合并层</h3>
 
-<p>新增 <code>src/fundamental_cache_io.py</code> —— <b>唯一合并语义实现</b>, 五个写入方</p>
+<p>新增 <code>data_pkg/fundamental_cache_io.py</code> —— <b>唯一合并语义实现</b>, 五个写入方</p>
 <p>(<code>fundamentals.py</code> / <code>fundamentals_quarterly.py</code> / <code>fundamentals_earnings.py</code> /</p>
 <p><code>fundamentals_retry.py</code> / <code>fundamentals_info.py</code>, 比原计划多查出第 5 个) 一律经此落盘:</p>
 
@@ -2602,7 +2643,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <h3>P2: 数据版本指纹进 config 与噪声底事实源</h3>
 
-<p>新增 <code>src/data_fingerprint.py</code>: 三组件独立指纹 —— <code>fundamentals_cache</code>(目录 stat 清单哈希)</p>
+<p>新增 <code>research_pkg/data_fingerprint.py</code>: 三组件独立指纹 —— <code>fundamentals_cache</code>(目录 stat 清单哈希)</p>
 <p>/ <code>panel</code>(size+mtime_ns) / <code>features_code</code>(<code>features.py</code>+<code>dataset_io.py</code> 内容 sha256)。</p>
 <p><code>diff()</code> 逐项给 <code>同/变/缺</code>, 任一侧缺 ⇒ 整体 <code>None</code>(判不出, 不猜)。</p>
 
@@ -2631,8 +2672,8 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <h3>产出</h3>
 
-<li><code>src/fundamental_cache_io.py</code> + 五个写入方接线 + <code>tests/market/test_fundamental_cache_append_only.py</code>(20 锁)</li>
-<li><code>src/data_fingerprint.py</code> + <code>train_final</code> / noise_floor / <code>champion_term review</code> 三处接线</li>
+<li><code>data_pkg/fundamental_cache_io.py</code> + 五个写入方接线 + <code>tests/market/test_fundamental_cache_append_only.py</code>(20 锁)</li>
+<li><code>research_pkg/data_fingerprint.py</code> + <code>train_final</code> / noise_floor / <code>champion_term review</code> 三处接线</li>
 <p>  + <code>tests/market/test_data_fingerprint.py</code>(9 锁, 含「指纹不进 verdict 签名」)</p>
 <li><code>docs/fundamental-pit-remediation.md</code> §5(D3 试点实测 + 数据级量化 + 双窗口实验设计)</li>
 
@@ -2808,7 +2849,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <p><b>背景</b>。瓶颈不在模型也不在风控, 在<b>持仓形态</b>: 生产是「单袖袋 Top30 / 60 日</p>
 <p>整仓换」—— 每 60 天一次性把 30 只全换掉, 换手集中在一天, 且**同一时点进出的仓位</p>
-<p>互相踩踏**。<code>data/champion_config.json → 袖袋执行</code> 与 <code>src/sleeves.py</code> 落地</p>
+<p>互相踩踏**。<code>data/champion_config.json → 袖袋执行</code> 与 <code>production_pkg/sleeves.py</code> 落地</p>
 <p>「3 个等权袖袋 × 每袋 20 名 × 物理持有 60 交易日, 每 20 个交易日只轮到 1 个袖袋</p>
 <p>到期换仓」。</p>
 
@@ -2844,7 +2885,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <p><b>产物与入口</b>。<code>data/sleeve_state.json</code>(台账, <code>state_io.write_json_atomic</code>) +</p>
 <p><code>output/sleeve_plan_&lt;date&gt;.csv</code>(逐袖袋槽位) / <code>sleeve_weights_&lt;date&gt;.csv</code>(聚合权重) /</p>
 <p><code>sleeve_instructions_&lt;date&gt;.md</code>(人读, 含「与 holdings.csv 对照」) + 提醒行。</p>
-<p><code>.venv/bin/python src/sleeves.py</code> 默认只读状态, <code>--run</code> 执行当日档期(<b>幂等</b>:</p>
+<p><code>.venv/bin/python production_pkg/sleeves.py</code> 默认只读状态, <code>--run</code> 执行当日档期(<b>幂等</b>:</p>
 <p>同日重跑 <code>due</code> 必空), <code>--asof</code> 补跑, <code>--reset --yes</code> 清台账。</p>
 <p><b>已挂盘后日链</b>(<code>self_evolve</code>, 排在 <code>v2_prod_exposure.py</code> <b>之后</b> —— slot 权重要</p>
 <p>当日精确暴露), rc=3 = 降级(配置/暴露/信号新鲜度, 计划仍写出)走 60 分钟冷却推送;</p>
@@ -2937,7 +2978,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <p><b>收尾核对(真实生产数据, 只读)</b>。<code>output/trade_plan_2026-09-25.csv</code> 20 行全部</p>
 <p>在册, 与 <code>output/sleeve_weights_2026-09-25.csv</code> <b>逐值一致</b>(max|Δ| &lt; 1e-12);</p>
 <p>每只 <code>0.55/60 = 0.9167%</code>, <code>Σpos_size = 0.1833 = 暴露/3</code> —— ramp 期只有 1/3 资金在</p>
-<p>建仓的袖袋上(设计内)。重跑 <code>src/sleeves.py --run</code> 幂等(<code>due</code> 空、</p>
+<p>建仓的袖袋上(设计内)。重跑 <code>production_pkg/sleeves.py --run</code> 幂等(<code>due</code> 空、</p>
 <p><code>sleeve_weights</code> md5 逐字节不变), 只把 trade_plan 的四列重刷成袖袋口径。</p>
 <p>(<code>output/trade_plan_*.csv</code> 在 .gitignore 内, 不是入库产物。)</p>
 
@@ -3168,7 +3209,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <p><b>这才是上面两个实验路上踩到的真问题, 且影响所有未来的上界测试。</b></p>
 
-<p><code>src/upper_bound_probe.py</code> 有两条会漂的量: <code>IC_REF_MIN = 0.05</code>(参照系下限)与</p>
+<p><code>research_pkg/upper_bound_probe.py</code> 有两条会漂的量: <code>IC_REF_MIN = 0.05</code>(参照系下限)与</p>
 <p><code>oos_cut()</code>(数据驱动的折6起点)。前者<b>只在 2025-11-19 窗口上标定过</b>, 后者会随</p>
 <p><code>oos_earnings</code> 延伸前移。<b>两者失配 ⇒ 假「量具坏了」。</b></p>
 
@@ -3203,7 +3244,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <li><code>scripts/raven_upper_bound_2026-09-28.py</code> → <code>output/raven_upper_bound_2026-09-28.{md,json}</code></li>
 <li><code>scripts/label_horizon_paradox_2026-09-28.py</code> → <code>output/label_horizon_paradox_2026-09-28.{md,json}</code></li>
-<li><code>src/upper_bound_probe.py</code>(仅探针) + <code>tests/features/test_upper_bound_probe.py</code></li>
+<li><code>research_pkg/upper_bound_probe.py</code>(仅探针) + <code>tests/features/test_upper_bound_probe.py</code></li>
 
 <h3>顺带记一条工程教训(我自己犯的, 已修)</h3>
 
@@ -3246,7 +3287,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <p>唯一的熊市(等权 −10.77% / 年内 MDD −20.33%; 对照 2020 的等权 +25.75% / MDD −37.34%,</p>
 <p>同为「先崩后涨」的剧震形态)。<b>是同类市场状态的替代, 不是同一年份。</b></p>
 
-<p><b>落地</b>: <code>src/survival_stress.py</code> 新增 <code>STRESS_YEAR = 2022</code> + <code>stress_year_consistency()</code>,</p>
+<p><b>落地</b>: <code>research_pkg/survival_stress.py</code> 新增 <code>STRESS_YEAR = 2022</code> + <code>stress_year_consistency()</code>,</p>
 <p>接入报告 ②-bis 段与 <code>survival_summary.json:stress_year_check</code>。</p>
 
 <p><b>实测结果(生产模型 ens_60)</b>:</p>
@@ -3317,7 +3358,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <h3>产物</h3>
 
-<li><code>src/survival_stress.py</code>(新增 <code>STRESS_YEAR</code> + <code>stress_year_consistency</code> + 报告 ②-bis)</li>
+<li><code>research_pkg/survival_stress.py</code>(新增 <code>STRESS_YEAR</code> + <code>stress_year_consistency</code> + 报告 ②-bis)</li>
 <li><code>tests/features/test_survival_stress_pgim.py</code> <b>7 例</b>, 经<b>变异测试</b>验证: ①<code>STRESS_YEAR</code></li>
 <p>  改回 2020 → 1 红; ②判不出时不再返回 <code>available=False</code> → 1 红。</p>
 
@@ -3559,7 +3600,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <h3>GEX 值得单独说: 原料已有, 但三重阻塞(且方向已被同类实验证否)</h3>
 
-<p><code>src/options_features.py</code> 已产出 <code>total_oi</code> / <code>pc_vol_ratio</code> / <code>iv_term</code> / <code>vrp</code>(含 OI),</p>
+<p><code>research_pkg/options_features.py</code> 已产出 <code>total_oi</code> / <code>pc_vol_ratio</code> / <code>iv_term</code> / <code>vrp</code>(含 OI),</p>
 <p><code>data/options_daily/</code> 已有 <b>5 天</b>链快照(09-24/09-25/09-29/09-30/10-01)⇒ **GEX 的</p>
 <p>原料在仓**。但:</p>
 
@@ -3575,7 +3616,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <p>   归档成「无效」**。</p>
 
 <p>⇒ <b>真正值得等的是 <code>options_daily</code> 攒满 60–90 天后的</b>个股截面<b>期权特征</b>(不是指数</p>
-<p>时序), 这条链路已挂好(<code>src/options_daily.py</code> 每交易日 16:30 ET 自动抓 top300+持仓),</p>
+<p>时序), 这条链路已挂好(<code>research_pkg/options_daily.py</code> 每交易日 16:30 ET 自动抓 top300+持仓),</p>
 <p>属<b>攒样本</b>而非新项目。AGENTS.md 已有登记。</p>
 
 <h3>顺带: 那个 100.2% 为什么不能当证据</h3>
@@ -3589,7 +3630,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <h3>产物</h3>
 
-<li>无代码改动。判读依据: <code>data/options_daily/</code>(5 天快照)、<code>src/options_features.py</code></li>
+<li>无代码改动。判读依据: <code>data/options_daily/</code>(5 天快照)、<code>research_pkg/options_features.py</code></li>
 <p>  (聚合口径)、<code>output/options_data_validation_20260922.md</code>(指数时序 OOS IC −0.11)、</p>
 <p>  <code>AGENTS.md</code>(fib-exit 0/9 否决 + 选项样本 &lt;60 天禁令 + option_overlay 期权纪律)</p>
 
@@ -3669,7 +3710,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <h3>③ ✅ PIT 到期预演通过(rc=0, 无硬问题)</h3>
 
-<p><code>src/pit_enable_dryrun.py</code> ⇒ <b>✅ 无硬问题 / 1 个提醒(闸门关闭 🧊 预期)</b>。</p>
+<p><code>research_pkg/pit_enable_dryrun.py</code> ⇒ <b>✅ 无硬问题 / 1 个提醒(闸门关闭 🧊 预期)</b>。</p>
 
 <li>任期进度: <b>第 10/91 天, 距到期 81 天</b>(2026-12-21);</li>
 <li>训练开关 <code>PIT_UNIVERSE</code> 关 / 实时开关 <code>PIT_REALTIME</code> 关(设计要求全程不开);</li>
@@ -3689,7 +3730,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 
 <h3>产物</h3>
 
-<li><code>src/real_vs_paper_gap.py</code>(现金记账) + <code>tests/ops/test_real_vs_paper_gap.py</code> <b>6 例</b></li>
+<li><code>research_pkg/real_vs_paper_gap.py</code>(现金记账) + <code>tests/ops/test_real_vs_paper_gap.py</code> <b>6 例</b></li>
 <p>  (变异测试已验证: 去掉 <code>equity + cash.cumsum()</code> ⇒ 3 条变红)</p>
 <li><code>output/real_vs_paper_gap.md</code> / <code>.png</code> 重生成</li>
 <li><code>data/universe.csv</code> + <code>data/panel.parquet</code>(860 只市值; 均带备份)</li>
@@ -3721,7 +3762,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <p>「新值错」但<b>判不出哪边错</b> ⇒ 必须留人工通道, 且放行是<b>正确处置</b>而非绕过闸门。</p>
 
 <pre><code>
-.venv/bin/python src/market_cap_recompute.py --apply \
+.venv/bin/python research_pkg/market_cap_recompute.py --apply \
   --confirm-new MRNA --confirm-basis "用户核 716.86亿; 旧值隐含 $64.82=2022 价位"
 </code></pre>
 
@@ -3799,7 +3840,7 @@ PIT_UNIVERSE=1 ... → 过滤后行数 2990123(与 panel 相同)
 <p><b>机制化: <code>--set-mcap SYM=USD ...</code></b></p>
 
 <pre><code>
-python src/market_cap_recompute.py --apply \
+python research_pkg/market_cap_recompute.py --apply \
   --set-mcap UHAL=11697000000 FWONA=21297000000 QNT=12655000000 \
            CET=1969000000  BNT=13058000000 ARXS=21279000000 \
            VG=31601000000  SYM=25444000000  SMR=3395000000 MAIR=14559000000 \
@@ -4406,7 +4447,7 @@ seen_low    = (lo.shift(w) == lo_min_to_t).fillna(False)
 <p>前面三条加查证明 naive t 在本项目会系统性虚高, 而新提案还会继续用这个口径 ⇒</p>
 <p><b>必须把它固化成默认能力</b>, 否则每来一个新提案都要重踩同一个坑。</p>
 
-<h3>改了什么(<code>src/upper_bound_probe.py</code>, 唯一的生产改动)</h3>
+<h3>改了什么(<code>research_pkg/upper_bound_probe.py</code>, 唯一的生产改动)</h3>
 
 <p><b>纯新增, 不改任何既有行为</b>:</p>
 <li><code>DISJOINT_CUT/DISJOINT_END/DISJOINT_BLOCK/DISJOINT_T/DISJOINT_MIN_BLOCKS</code></li>
@@ -4447,7 +4488,7 @@ seen_low    = (lo.shift(w) == lo_min_to_t).fillna(False)
 <pre><code>
 .venv/bin/python -m pytest tests/features/test_upper_bound_probe.py            # 20(既有, 须全绿)
 .venv/bin/python -m pytest tests/features/test_upper_bound_probe_disjoint.py   # 9(新)
-.venv/bin/python src/upper_bound_probe.py --disjoint --extra &lt;某列&gt;            # 端到端 smoke
+.venv/bin/python research_pkg/upper_bound_probe.py --disjoint --extra &lt;某列&gt;            # 端到端 smoke
 </code></pre>
 
 <p>端到端实测(真实数据 <code>sec_ret_5d__sub__dd_high_60</code>): base IC +0.0990、</p>
@@ -4772,7 +4813,7 @@ seen_low    = (lo.shift(w) == lo_min_to_t).fillna(False)
 <p><code>test_baseline_is_exact</code>)同因 —— <code>retrain.py</code> 无 <code>cwd</code> 的「跑自家脚本」位点实测 **3 &gt;</p>
 <p><code>BASELINE[retrain]</code>=2**(2026-10-05 实测记录见 plan-cleanup §2.2)。本日特征↔模型流水线</p>
 <p>串联修复(commit <code>9b991ab</code>)把 retrain 训练前的<b>内联</b></p>
-<p><code>subprocess.run([sys.executable, "-u", "src/features.py"])</code> 重建块改为复用</p>
+<p><code>subprocess.run([sys.executable, "-u", "features_pkg/features.py"])</code> 重建块改为复用</p>
 <p><code>signal_archive.rebuild_dataset</code>, 该位点消失 ⇒ 位点 3 → 2(旧 [490=LGB worker,</p>
 <p>816=内联重建, 828=中毒闸] → 新 [490=LGB worker, 839=中毒闸]), 与基线<b>精确相等</b> ⇒ 三条转绿。</p>
 
@@ -4811,8 +4852,8 @@ seen_low    = (lo.shift(w) == lo_min_to_t).fillna(False)
 <table>
 <tr><td>红</td><td>根因(已实测)</td><td>状态</td></tr>
 <tr><td><code>experiment_index</code> ×2</td><td><code>docs/experiment-index.md</code> 定稿于 <b>10-03</b>, 此后新增 3 个脚本未登记 ⇒ 标题与引言分母偏差: <code>test</code> 31→<b>32</b>(<code>pit_ab_test</code> 10-04)、<code>audit</code> 12→<b>13</b>(<code>fundamentals_poison_audit</code> 10-04)、<code>guard</code> 9→<b>10</b>(<code>spin_off_guard</code> 10-02)。测试按 <code>GROUPS</code> 顺序断言, <code>test</code> 先抛 ⇒ <code>audit</code>/<code>guard</code> 的偏差被掩盖(实为 3 家族偏差, 不止 2 红所见)</td><td>✅ <b>本日修</b>: 4 处计数 + 3 个新脚本如实登记(带上游: <code>fundamentals_poison_audit</code> ← <code>retrain.py</code>/<code>fundamentals_sec_backfill.py</code>;另两个无 import 方 = 手动) ⇒ <code>test_experiment_index_families</code> <b>4 passed</b></td></tr>
-<tr><td><code>fold6_cut</code></td><td><code>src/upper_bound_probe.py:212</code> 硬编码 <code>DISJOINT_CUT = "2022-01-03"</code>(<code>:393</code> 形参默认值引用它), 测试要求走 <code>dual_validate.oos_since_flag()</code> 现算</td><td>⏳ 未修(改默认值需同步 :400 docstring 与 :469 打印, 下轮)</td></tr>
-<tr><td><code>silent_except</code> ×3</td><td>同一处: <code>src/data_fingerprint_scan.py:139</code> 的 <code>except Exception: continue</code>(日期列探测)—— 窗口内缺「故意静默」四字 ⇒ <code>unannotated_sites</code> 报; 且 <code>_scan_short</code> 计为短 try 静默点, <code>SHORT_TRY_BASELINE["data_fingerprint_scan.py"]</code> 未登记(基线 0 vs 实际 1)</td><td>⏳ 未修(两条路: 补注解+登记基线(有 <code>data_refresh_v2: 1</code> 先例), 或改成 <code>print</code> 出声从而不计数; 需先读 <code>_classify</code> 判「出声」是否免计, 下轮)</td></tr>
+<tr><td><code>fold6_cut</code></td><td><code>research_pkg/upper_bound_probe.py:212</code> 硬编码 <code>DISJOINT_CUT = "2022-01-03"</code>(<code>:393</code> 形参默认值引用它), 测试要求走 <code>dual_validate.oos_since_flag()</code> 现算</td><td>⏳ 未修(改默认值需同步 :400 docstring 与 :469 打印, 下轮)</td></tr>
+<tr><td><code>silent_except</code> ×3</td><td>同一处: <code>research_pkg/data_fingerprint_scan.py:139</code> 的 <code>except Exception: continue</code>(日期列探测)—— 窗口内缺「故意静默」四字 ⇒ <code>unannotated_sites</code> 报; 且 <code>_scan_short</code> 计为短 try 静默点, <code>SHORT_TRY_BASELINE["data_fingerprint_scan.py"]</code> 未登记(基线 0 vs 实际 1)</td><td>⏳ 未修(两条路: 补注解+登记基线(有 <code>data_refresh_v2: 1</code> 先例), 或改成 <code>print</code> 出声从而不计数; 需先读 <code>_classify</code> 判「出声」是否免计, 下轮)</td></tr>
 <tr><td><code>render</code> 快照</td><td><code>ic-efficiency</code> 卡片「执行层归因」<b>主因轮换</b>: 快照钉的是 <code>regime 逆风(超卖…)(主因…)</code>, 实际已是 <code>门控/风控降仓(…)(主因…)</code> —— 文案结构相同, 只是<b>数据驱动的主因排序变了</b>, 非结构漂移(卡片没缺)</td><td>⏳ 未修(需决定: 归一化主因段再刷快照, 还是接受日更; 每日数据变会反复红 ⇒ 治本是把该段纳入 <code>[[N]]</code>/<code>[[PCT]]</code> 同级归一化, 下轮)</td></tr>
 </table>
 
@@ -4904,7 +4945,7 @@ seen_low    = (lo.shift(w) == lo_min_to_t).fillna(False)
 <p>与 AGENTS「二级源全查过、0 拼接候选」记录一致 ⇒ <b>上游停更型, 非本项目数据 bug</b>。</p>
 <p><code>upstream_recovery_watch</code> 已挂 <code>--daily</code> 每日记录 ⇒ 维持观察, 本批无代码改动。</p>
 
-<h3>③ retrain_check 基线 bug 修复(<code>src/signal_archive.py::retrain_check</code>)</h3>
+<h3>③ retrain_check 基线 bug 修复(<code>research_pkg/signal_archive.py::retrain_check</code>)</h3>
 
 <p><b>两半根因(实测)</b>: (a) 样本阈值 <code>RETRAIN_EVAL_NEW=200_000</code> 对上当前日增成熟</p>
 <p>~1,200 行 ⇒ 还差的 8,395 行要 <b>~167 个交易日</b>才够(首轮播种把「历史存量」记成基线,</p>
@@ -4982,7 +5023,7 @@ seen_low    = (lo.shift(w) == lo_min_to_t).fillna(False)
 
 <p><b>三项都是 12-21 换冠前置(用户裁决「全做」)的落地。</b></p>
 
-<li><b>影子列前向追踪器</b> <code>src/cat_shadow_forward.py</code>(新): 每日盘后(signal_archive</li>
+<li><b>影子列前向追踪器</b> <code>research_pkg/cat_shadow_forward.py</code>(新): 每日盘后(signal_archive</li>
 <p>   --eval 之后)读 <code>signal_archive</code>,剔 <code>is_backfilled</code>,逐日 spearman</p>
 <p>   <code>ens_cat_shadow_60</code> vs <code>realized_60</code> 与 <code>composite</code> 对比,输出 mean_delta /</p>
 <p>   pos_delta_share / gate_hint(阈值 0.01)。里程碑 (1,5,10,20,30,45,60) 一次只报最大,</p>
@@ -5048,7 +5089,7 @@ seen_low    = (lo.shift(w) == lo_min_to_t).fillna(False)
 <p>  <b>与长期无显著差异</b>,块判定 z=−0.63(4/20 块不比它差)也没触发。</p>
 <p>  <b>降仓是开着的,衰减检验说没衰减</b> ⇒ 这条地板在用噪声判衰退。</p>
 
-<h3>改了什么(<code>src/decay_monitor.py</code>,唯一生产改动)</h3>
+<h3>改了什么(<code>research_pkg/decay_monitor.py</code>,唯一生产改动)</h3>
 
 <li><code>IC_HALVE_THRESH = 0.03</code> → <b><code>-0.10</code></b>(≈ mu − 0.5·SE_window)。</li>
 <li>告警/健康文案改为<b>点名是哪条线触发的</b>:降仓是 <code>or</code> 两条线</li>
