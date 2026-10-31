@@ -29,7 +29,7 @@ li { margin:3px 0; }
 </head>
 <body>
 <main>
-<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-10-23 03:34 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
+<a class="back" href="https://shanelau2.github.io/deepltrading-report/weekly.html">← 冠军周报</a><br><div class="meta">生成时间 2026-10-31 12:44 · 源文件 docs/decision-log.md(仓库内为唯一事实源, 本页为只读镜像)</div>
 <h1>历史决策记录</h1>
 
 <p>本文件只记录实验结果和已否决方案，不代表当前生产配置。</p>
@@ -5129,6 +5129,74 @@ seen_low    = (lo.shift(w) == lo_min_to_t).fillna(False)
 <p>若后续 z_nw 或块判定持续报显著衰减,应回头复查本值 —— <b>别指望它单独兜底</b>,</p>
 <p>真正的统计护栏是 <code>low</code> 那条和块判定。</p>
 
+
+<h2>决策四十四: 期权链抓取加<b>第二条轴</b> —— 信号可执行名单(<code>--signal-pool 60</code>),2026-10-30 开启</h2>
+
+<p><b>背景(为什么非改不可)</b>:<code>options_daily.pick_symbols</code> 只有一条轴 = 「<code>universe.csv</code> 按</p>
+<p>市值前 300 + 持仓 + 显式指定」。实测该门槛 <b>≈65B 美元</b>(第 300 名 SPG),而生产信号</p>
+<p>可执行名单 55 只的市值全在 <b>3–50B</b> ⇒ <b>50/55 从来没进过抓取范围</b>:55 只里只有 5 只</p>
+<p>有链归档,且那 5 只是靠持仓(MCD/BAC/BMNR)或显式指定(DRAM/KTOS)进来的,<b>没有一只靠市值规则</b>。</p>
+<p>后果不是"少看几张表",而是<b>规则级瘫痪</b>:2026-10-30 实测的候选规则</p>
+<p>(信号前列 + 距财报 12–30 交易日 + 入场 IV 在自身低位 ⇒ 买 δ≈0.7 跨财报 call,</p>
+<p>见 <code>docs/options-pre-earnings-calls-2026-10-30.md</code> §10–§12)在这批名字上</p>
+<p><b>既不能提前发现、也不能事后记账</b> —— 当日报价根本没留档。</p>
+
+<p><b>决定</b>:加第二条轴并<b>立即开启</b>(用户 2026-10-30 拍板「开」)。实现刻意做成</p>
+<p><b>默认关闭 + 复用已有语义</b>,不改任何既有行为:</p>
+<li><code>--signal-pool N</code> 读 <code>output/signals_*.csv</code>(取非 filtered 的最新一份,<code>trade_rank</code> 升序前 N),</li>
+<p>  并进 <code>--symbols</code> 的同一语义 ⇒ 自动落入 <code>priority_symbols</code> 的 <b>must_keep</b>,</p>
+<p>  <code>--max-symbols</code> 截断时优先保住(避开 2026-10-20 那个「截断把持仓整段砍光」的旧坑);</p>
+<li><code>fail-closed</code>:读不到信号文件 ⇒ 返回空表并告警,<b>不回退成市值池</b>(宁可不并,不静默换口径);</li>
+<li><code>--dry-run</code> 供审阅名单与重合度,零网络请求。</li>
+
+<p><b>改动前实测(全在临时目录,不碰 <code>data/options_daily</code>)</b>:</p>
+<li>dry-run:301 → <b>353 只</b>,信号池 55 只里归档已有 5、<b>新增 50</b> ⇒ <b>+2.0 分钟/天</b>(2.4s/只);</li>
+<li>截断到 320:信号池 55 + 持仓 3 <b>全保留</b>,被砍的是市值尾部(EOG/CI/CNI/ETF);</li>
+<li><b>烟测</b>:此前从未出现在归档的 <code>FDXF / SMR / KTOS / BIDU</code> 全部抓取成功</li>
+<p>  (有 bid 腿 98–430、到期月 3–9;点差中位 13.3–28.3%,过 ≤20% 闸 <b>44–64%</b>)</p>
+<p>  ⇒ 证明"以前不是抓不到,是根本没去抓";同时第一次给出这些中盘名字的真实可成交率。</p>
+
+<p><b>⚠ 一个刻意避开的破坏性耦合</b>:烟测必须写 <code>/tmp</code>。若写进 <code>data/options_daily</code>,</p>
+<p>当晚正式轮会因「当日文件已存在」而<b>幂等跳过</b>(<code>--force</code> 才重抓)⇒ 反而把当天的正式归档废掉。</p>
+
+<p><b>生效方式与时间</b>:<code>deploy/com.deepltrading.options-daily.plist</code> 加两行参数 → 覆盖到</p>
+<p><code>~/Library/LaunchAgents/</code>(旧版备份 <code>output/.launchd_backup_20261030/</code>)→ <code>bootout</code>+<code>bootstrap</code>;</p>
+<p><code>launchctl print</code> 核对 <code>arguments</code> 已含 <code>--signal-pool 60</code>。</p>
+<p>计划是<b>周一至周五 06:45 本地</b>,故今天(周五)已跑过的那轮仍是旧轴,<b>首批新轴数据在下一个触发点</b>(周一 06:45,抓的是周五美股收盘链)。</p>
+<p>副作用预期:周末不抓 ⇒ 周五收盘的<b>盘前</b>报价若恰有财报(如 FDXF 本次)会错过,只拿到事后价 —— 这是排程节奏的固有代价,不为它单独加跑。</p>
+
+<p><b>回滚</b>:删 plist 里那两行 <code>&lt;string&gt;</code>,<code>bootstrap</code> 一次即可(其余逻辑零变化)。</p>
+
+<h2>决策四十五: 每日推送新增「财报窗期权腿」一段(生产信号前30 ∩ 未来30交易日有财报 ∩ 四道闸选腿)</h2>
+
+<p>用户 2026-10-30 拍板:「在每日推送里加上 生产信号top30 而且最近一个月有财报的标的,以及经过筛选后对应可买入的期权腿」。</p>
+
+<p><b>按 2026-10-26「卖权利金」先例实现:独立产物 + 独立一段,不塞主推送正文。</b></p>
+<p>新模块 <code>research_pkg/earnings_option_legs.py</code>(<code>build_card</code> / <code>format_push_lines</code>),</p>
+<p><code>stock_rank_push._earnings_leg_lines()</code> 在盘中与盘后两个正文末尾各插入一段。</p>
+
+<p><b>判据不是新拍的,全部来自本轮已量化的结论</b>(<code>docs/options-pre-earnings-calls-2026-10-30.md</code>):</p>
+<p><code>trade_rank≤30</code> + 距财报 <b>12–30 交易日</b>(§10:T-20 凸性 +1.03%/事件 t=3.15,<b>T-1 是 −0.51% t=−2.32 ⇒ 临头买被否证,所以 12 以内直接不列</b>)</p>
+<p>+ 链级财报溢价 &lt;15% + 选腿四闸:<b>点差≤20% 且 OI≥50</b>(与 <code>option_combos</code> 同一把尺)、</p>
+<p><b>δ≈0.70 用自算值</b>(§14.2:归档存储 δ 近 ATM 21.4% 偏差&gt;0.15)、存储/自算分歧≤0.15、<code>mid≥内在价值</code>。</p>
+
+<p><b>三条刻意的纪律(都被测试锁住,tests/research/test_earnings_leg_push_section.py 8 条)</b></p>
+<li><b>任何异常不得带崩主推送</b> ⇒ 全包 try/except,失败时印「卡生成失败(原因)」——</li>
+<p>   静默缺席会被读成"今天没机会",那是一回事吗?不是;</p>
+<li><b>参考层措辞</b>:只报能不能成交/多少钱/保本要涨多少,不写"建议买入"、不给方向(断言里没有方向词);</li>
+<li><b>文案区分三类空结果</b>:「覆盖/窗口消耗(no_chain / no_calendar / 不在窗口)」≠</li>
+<p>   「走到选腿被拒(点差/OI/溢价)」≠「今天没机会」。混成一句会让人放弃真实存在的窗口。</p>
+
+<p><b>时间口径必须印在卡上</b>:盘后推送 04:30 跑、链抓取 06:45 跑 ⇒ 推送只能拿到 <b>T-1 快照</b>,</p>
+<p>所有报价/点差/保本都标 <code>T-1</code>,不当实时报价用。日历走 <code>data/tmp/earn_dates.csv</code> 6 天缓存 +</p>
+<p><code>NET_CAP</code> 上限,避免拖垮有外层超时的日链。</p>
+
+<p>接入过程又抓出一个真 bug(值得记):缓存 <code>earn_dates.csv</code> 只 parse 了 <code>ann</code>,<code>fetched</code> 留 str dtype</p>
+<p>⇒ <code>D.fetched &gt;= Timestamp</code> 抛 <code>Invalid comparison</code> ⇒ <b>首轮正常、次轮起每天失败</b>。</p>
+<p>补 <code>test_earn_dates_cache_roundtrip</code> 专门测缓存回读路径(以前所有测试都只测首写,不测复读)。</p>
+
+<p><b>首日实况</b>(2026-10-29 榜 + 最新链):30 只里 <code>outside_lead_window×23</code>、<code>no_calendar×4</code>、</p>
+<p><code>no_chain×3</code> ⇒ <b>0 只走到选腿</b>。这正是该段该有的样子:大部分时间为空,并说清为什么空。</p>
 
 </main>
 </body>
