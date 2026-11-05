@@ -3,6 +3,13 @@ name: Deploy daily report to Pages
 on:
   push:
     branches: [main]
+    # ⚠ 2026-11-05(根因 D-2026-11-05-02): 核对环节的**截图留档 commit** 也落在 main,
+    # 于是每次核对都会多触发一次 Pages 构建; 而 concurrency.cancel-in-progress 会
+    # 让它**取消正在排队的那次真正的内容部署**(11-05 实测: 00:28:24 的回滚 push 在
+    # 00:28:25 取消了唯一带着新内容的 #1071 ⇒ 新版从未上线)。
+    # deploy_verify/ 只是核对证据, 不参与页面内容 ⇒ 它单独变更不该触发部署。
+    paths-ignore:
+      - 'deploy_verify/**'
   workflow_dispatch:
 
 permissions:
