@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="deploy-gen" content="20261108T201420.897871">
+<meta name="deploy-gen" content="20261108T204407.288489">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>冠军策略周报</title>
 <style>
@@ -65,7 +65,7 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 <li>总 Sharpe(含实时段 1322 天): 1.86</li>
 <li>总 Sharpe(截至 OOS 面板末 2026-04-16): 1.93</li>
 <li>最大回撤: -17.9%</li>
-<li>⚠ <b>存活偏差未过滤</b>: 顶部 Sharpe / MDD 来自 <code>PIT_UNIVERSE=off</code> 的回测面板(用户 2026-09-21 裁决); <code>output/pit_bias_report.md</code> 实测 ΔSharpe ≈ <b>−0.84</b>,即约 0.8 的 Sharpe 来自当年买不到的标的 ⇒ 对外引用须标注「未过滤存活偏差」。PIT 过滤排期 2026-12-21 任期到期连重训一起启用(详见下节「回测口径与泛化验证设施」)。</li>
+<li>⚠ <b>存活偏差未过滤</b>: 顶部 Sharpe / MDD 来自<b>未做 PIT universe 过滤的研究面板</b>(<code>PIT_UNIVERSE</code> 保持关闭, 用户 2026-09-21 裁决); <code>output/pit_bias_report.md</code> 在<b>单袋 k30 / DD8 / VT18 对照引擎</b>(基线 Sharpe 1.556)上测得「换选股范围、未重训」ΔSharpe ∈ <b>[−0.86, −0.75]</b>, 与本报告 V2 袖袋曲线<b>不同源, 不可直接相减</b> ⇒按项目约定, 启用 PIT 重训前对外引用 Sharpe 须标注「未过滤存活偏差」。PIT 过滤排期 2026-12-21 任期到期连重训一起启用(详见下节「回测口径与泛化验证设施」)。</li>
 
 <blockquote>口径说明: 顶部数字来自净值曲线(实时行情延伸到最新交易日);下方完整风控表截至 OOS 面板末 2026-04-16。两者是同一策略的不同数据窗口——最新 142 个交易日(2026-04-17→2026-11-06)累计 +10%(Sharpe 1.17),把全窗口 Sharpe 从 1.93 拉到 1.86。看完整风控表请以右侧「截至面板末」口径为准;顶部 1.86 是含最新行情的更保守前瞻口径。</blockquote>
 
@@ -87,7 +87,7 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 <tr><td>成交时点</td><td>暴露因果恒等式 <code>net_t = exposure_{t-1} × raw_t</code>(risk_control_v2 2026-09-10 修复); 顶层净值 = 3 袖袋裸收益 × V2 暴露, 无个股止损</td></tr>
 <tr><td>组合层风控</td><td>暴露 = <b>DD 阶梯(唯一驱动)</b>; <code>ic_health_mode=off</code> ⇒ IC 健康层与 Canary 均不接入暴露(<code>docs/production-conventions.md</code> 决策二十二)</td></tr>
 <tr><td>前视检查</td><td><code>lookahead_audit</code>/<code>lookahead_healthcheck</code> shift0/1 对比 + purge/embargo + <code>fwd_*</code> 标签日期守卫; 最新体检 <code>output/lookahead_healthcheck.json</code></td></tr>
-<tr><td>⚠ 存活偏差</td><td><b>未过滤</b>(<code>PIT_UNIVERSE=off</code>, 用户 2026-09-21 裁决); <code>output/pit_bias_report.md</code> 实测 ΔSharpe ≈ <b>−0.84</b>(约 0.8 的 Sharpe 来自当年买不到的标的) ⇒ 对外引用顶部 Sharpe 须标注「未过滤存活偏差」; PIT 过滤排期 2026-12-21 任期到期连重训一起启用</td></tr>
+<tr><td>⚠ 存活偏差</td><td><b>未过滤</b>(<code>PIT_UNIVERSE</code> 保持关闭, 用户 2026-09-21 裁决); <code>output/pit_bias_report.md</code> 在<b>单袋 k30 / DD8 / VT18 对照引擎</b>(基线 Sharpe 1.556)上测得「换选股范围、未重训」ΔSharpe ∈ <b>[−0.86, −0.75]</b>; 该测量与本报告 V2 袖袋曲线<b>不同源,不可直接相减</b>(报告自述: 只换选股范围、没换模型, 真消除偏差须 <code>PIT_UNIVERSE=1</code> 重训) ⇒ 启用重训前对外引用 Sharpe 须标注「未过滤存活偏差」; PIT 过滤排期 2026-12-21 任期到期连重训一起启用</td></tr>
 <tr><td>信号权威</td><td>生产/风控 = 实时链; 研究面板仅供<b>同面板内相对比较</b>, 不得当预期收益(<code>docs/signal-authority-2026-11-01.md</code>); 2026-05-29 后研究面板有空洞, V2 曲线尾部已切真实台账</td></tr>
 </table>
 
@@ -831,7 +831,7 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 </main>
 <footer style="max-width:1080px;margin:0 auto;padding:0 20px 60px;color:var(--muted);font-size:12px">
-  生成时间: 2026-11-08 20:14 | 部署: deploy_weekly.py
+  生成时间: 2026-11-08 20:44 | 部署: deploy_weekly.py
 </footer>
 <!--weekly-charts-module-->
 <script>/* 周报 / 总览页共用的 Chart.js 渲染模块(2026-09-08)。
