@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="deploy-gen" content="20261108T204407.288489">
+<meta name="deploy-gen" content="20261108T214716.582128">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>冠军策略周报</title>
 <style>
@@ -95,14 +95,33 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 <table>
 <tr><td>设施</td><td>角色</td><td>当前读数</td><td>已知限制 / 产物</td></tr>
-<tr><td>CPCV</td><td>跨路径 robustness</td><td>12 块 × 220 组合, purge60d+embargo60d; Sharpe 中位 1.147 / 最差 0.504 / P(&gt;0)=100%</td><td><b>220 条路径不独立</b>(共享 train/test 块), P(&gt;0) 不可读作概率; <code>output/cpcv.json</code></td></tr>
+<tr><td>CPCV</td><td>跨路径 robustness</td><td>12 块 × 220 组合, purge60d+embargo60d; Sharpe 中位 1.147 / 最差 0.504 / P(&gt;0)=100%</td><td><b>220 条路径不独立</b>: 任意两条平均共享 0.7397/3 个测试块 ⇒ ρ̄≈0.2466 ⇒ <b>有效独立路径 N_eff = 220/(1+219×0.2466) ≈ 4.00 条</b>; 故 P(&gt;0)=100% 只能读作「4 条独立路径全为正」, 不是 220 次独立抽样; <code>output/cpcv.json</code></td></tr>
 <tr><td>Purged WF</td><td>时间前向裁决(正式泛化口径)</td><td>6 折; 换冠闸门 BLOCKED(硬 fail=purged_wf, Δ裸Sharpe 中位 −0.33); 盲测窗标签未成熟(0/30 天)— 未判色, 换冠须等最终现实检验 / ENS 成熟 0/30 · 预测 5 日 · 判色 ETA ≈2027-01-08</td><td>对象是 ens/cat 模型对决, 非本报告生产 V2 曲线; <code>output/promotion_gates.json</code></td></tr>
-<tr><td>DSR</td><td>多重测试折扣</td><td>DSR 0.984(N=2183 次试算)</td><td>口径为 <code>strategy_score</code> 的观测 Sharpe 3.55, <b>不是本报告 1.91</b>; 对 N 不敏感(实测到 N=10000); <code>output/strategy_score.md</code></td></tr>
+<tr><td>DSR</td><td>多重测试折扣</td><td>DSR 0.984(N=2259 次试算)</td><td><b>在本报告同一条生产 V2 曲线上计算</b>(<code>data/champion_equity.csv</code>, T=1322, 年化 Sharpe 1.86; 精确 V2 曲线上 DSR=0.987); 同曲线 N=10000 → 0.982; 精确 1.91 口径 V2 曲线 N=10000 → 0.986 ⇒ 对 N 不敏感(扫到 1e12 仍 0.961)。⚠ 旧文案「观测 Sharpe 3.55」是 README 时代 top30+ATR×1.5+DD8 旧口径的遗留, 已修正为现算值; <code>output/strategy_score.md</code></td></tr>
 <tr><td>SPA</td><td>selection bias 校正</td><td>Δ(cat−ens) max-statistic p=651/2000</td><td>候选矩阵是 5 信号×K×窗口 = 75 个<b>代理</b>候选, 非完整 13 变体; <code>output/spa_delta.md</code></td></tr>
 <tr><td>Frozen OOS 盲测窗</td><td>最终现实检验</td><td>见 Purged WF 行(标签未成熟前不判色)</td><td>冻结点后真实新数据优先于任何历史回测口径; <code>docs/production-conventions.md</code> §模型泛化裁决架构</td></tr>
 </table>
 
 <blockquote>⚠ 上表「当前读数」每次渲染从产物实时读取; 某产物缺失/损坏时该行写「⚠ 未算出(原因)」并打 stderr, 不静默省略整行。</blockquote>
+
+<h3>已知局限与不可比声明（2026-11-08 补）</h3>
+
+<table>
+<tr><td>项</td><td>说明</td></tr>
+<tr><td>CPCV 的「220 条」不是 220 个独立证据</td><td>220 = C(12,3) 的全部重组; 任意两条平均共享 0.7397/3 个测试块 ⇒ ρ̄≈0.2466 ⇒ <b>有效独立路径 N_eff≈4.00 条</b>。<code>P(&gt;0)=100%</code> 应读作「约 4 条独立路径同向为正」, 不是 220 次独立试验的胜率。分块聚合读数: 12 个单块 IC 中位 0.0667、正号 10/12(83.3%), 单块 p_pos 远低于 220 路径的 95.5% —— 正是「3 块平均稀释负块」的机制</td></tr>
+<tr><td>折6 在 CPCV 分布中的位置只作定位参考</td><td>1.72 约在 CPCV 220 路径的第 <b>90</b> 百分位, 1.91 约第 <b>97</b> 百分位; 但 CPCV=模型层 bare k30(ens_60、无 V2、无袖袋), 折6/全窗=组合层 V2 袖袋(DD 阶梯), <b>不同源, 不能读成「生产比 90% 的配置更好」</b></td></tr>
+<tr><td>DSR 只折扣「多重试算」, 不覆盖三件事</td><td>不修正 ① CPCV 路径依赖(N_eff≈4); ② 未过滤存活偏差(ΔSharpe≈−0.84, 不同源不可相减); ③ 非平稳性/regime 变化。<b>「DSR&gt;0.95」≠「策略未来可靠」</b></td></tr>
+<tr><td>验证设施的当前状态</td><td>Purged WF 换冠闸门 <b>BLOCKED</b>(硬 fail=purged_wf, Δ裸Sharpe 中位 −0.33); 盲测窗标签未成熟(<b>0/30 天</b>, 判色 ETA ≈2027-01-08)。⇒ 当前处于「换冠被阻塞、IC 层关闭、验证未产出可裁决结论」的窗口, 需主动归因(见下节)而非等闸门自动解锁</td></tr>
+</table>
+
+
+<h3>因子拥挤度（研究件，未接日链）</h3>
+
+<li><b>内部交互特征</b>：<code>vol_12m_div_log_mc</code> 家族 28 个变体 PC1=<b>55.7%</b>、有效独立维数 <b>2.95</b> ⇒ <b>局部拥挤成立</b>（判据 PR≤3.0 触发）；全池 144 个候选 PC1=24.8%、PR=7.94 ⇒ 未整体退化。</li>
+<p>  - 内部因子拥挤 = <b>是（候选池层面的多族冗余，vol 家族最集中）</b>：vol_12m_div_log_mc 家族 28 个变体只有约 2.9 个独立方向（PC1 55.7%）；全池 144 个候选只有约 7.9 个有效维数，且 21 对候选 |ρ|≥0.999。但归因不止 vol：同一挖掘器把每份报告 Top-15 两两组合，pe_ttm/vol_60/ttm_eps/ret_5d 也各自出现在 50+ 个候选中 ⇒ 是挖掘机制层面的重复押注，不是单一基础特征的线性组合。</p>
+<li><b>外部三代理</b>：因子收益离散度 ls_std60=0.01584（P83.2，越低越拥挤 ⇒ 未预警）；平均配对相关 0.259（P44.3，未触及 P90）；持仓换手 0.037（29 期，样本不足不给分位）。</li>
+<p>  - ⚠ <b>结构性冗余</b>：<code>volatility_60__VS__downside_vol_60</code> 0.995、<code>volatility_60__VS__high_low_range_20</code> 0.984、<code>downside_vol_60__VS__high_low_range_20</code> 0.986 ⇒ 单看这三个「风格」会高估分散度。</p>
+<li>13F 机构持仓拥挤度仍<b>不可测</b>（无数据源、季度滞后），已按 <code>docs/decision-log.md:4115</code> 留档。</li>
 
 
 <h2>完整风控指标表(全窗口 vs 折6样本外)</h2>
@@ -380,6 +399,17 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 <tr><td>2024-2026 牛</td><td>+306.6%</td><td>2.53</td><td>-17.9%</td><td>68%</td></tr>
 <tr><td>2026-06 后样本外</td><td>-4.4%</td><td>-0.77</td><td>-5.7%</td><td>85%</td></tr>
 </table>
+
+<h3>⚠ 近期回撤归因（2026-11-08 研究件，只读）</h3>
+
+<blockquote><b>「2026-06 后样本外」这一行不能当业绩读</b>：该窗口 112 个交易日中 <b>30 天（26.8%）收益恰为 0</b>（信号断供段的空袋/假零），断供段占 73.2% 日数；平均暴露 85% 是<b>假零把回撤机械磨平后 DD 阶梯自动回满仓的伪影</b>，不是真实决策。</blockquote>
+
+<blockquote><b>唯一干净读数 = 真实台账段 2026-09-28→11-06</b>（30 天）：累计 <b>-3.70%</b>、Sharpe <b>-3.22</b>、MDD <b>-4.60%</b>、平均暴露 <b>78.2%</b>、零收益天数 0。</blockquote>
+
+<blockquote><b>归因排序（干净段）</b>：① <b>风格因子方向逆转（高波动/高 Beta）为主因</b> —— 复合因子该段 <b>-17.77%</b>、组合 β=<b>0.335</b>、R²=<b>0.715</b>、贡献约 <b>-6.25pp</b>；② 行业内选股约 -4.08pp（Industrials -2.99pp / Technology -0.80pp）；③ 成本 0.02~0.43pp（最坏 20bp/边仅占亏损 11.6%）；④ <b>DD 阶梯是减损 +0.82pp</b>（实际 vs 满仓裸），1 日执行滞后即使消除（前视反事实）也只到 -2.00%。</blockquote>
+
+<blockquote>结论：这段回撤<b>是真实的</b>（干净 30 天贡献全窗对数亏损 83.6%），但主因不是「高暴露 + 阶梯太慢」，而是持仓风格在因子层面反转。⚠ 干净段仅 30 天, 统计上只能作<b>描述性归因</b>, 不是显著 alpha 分解。完整推导见 <code>recent_oos_attribution_2026-11-08.json</code> 与 <code>output/recent_oos_attribution_2026-11-08.md</code>。</blockquote>
+
 
 <h2>门控触发统计</h2>
 <li>降半仓状态天数: 959 / 1322 (72.5%)</li>
@@ -831,7 +861,7 @@ summary { cursor:pointer; font-weight:600; color:var(--accent); }
 
 </main>
 <footer style="max-width:1080px;margin:0 auto;padding:0 20px 60px;color:var(--muted);font-size:12px">
-  生成时间: 2026-11-08 20:44 | 部署: deploy_weekly.py
+  生成时间: 2026-11-08 21:47 | 部署: deploy_weekly.py
 </footer>
 <!--weekly-charts-module-->
 <script>/* 周报 / 总览页共用的 Chart.js 渲染模块(2026-09-08)。
